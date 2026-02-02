@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SANDBOX_DIR="${HOME}/.local/share/claude-sandbox"
+SANDBOX_HOME="${HOME}/.claude-sandbox-home"
+SANDBOX_SIF="${SANDBOX_DIR}/claude-sandbox.sif"
+
+# Initialize persistent home directory
+init_sandbox_home() {
+    mkdir -p "${SANDBOX_HOME}"/{.local/bin,.local/share/uv,.config,.claude}
+
+    if [ ! -f "${SANDBOX_HOME}/.bashrc" ]; then
+        cat > "${SANDBOX_HOME}/.bashrc" << 'EOF'
+export PATH="$HOME/.local/bin:$PATH"
+export UV_TOOL_DIR="$HOME/.local/share/uv/tools"
+export UV_TOOL_BIN_DIR="$HOME/.local/bin"
+export UV_PROJECT_ENVIRONMENT=.venv-sandbox
+
+# Install claude-monitor on first run
+if ! command -v claude-monitor &> /dev/null; then
+    echo "Installing claude-monitor..."
+    uv tool install claude-monitor 2>/dev/null || true
+fi
+EOF
+    fi
+}
+
+# Build container
+build_container() {
+    echo "Building Claude sandbox container..."
+    mkdir -p "${SANDBOX_DIR}"
+
+    # Try unprivileged build first, fall back to fakeroot
+    if ! apptainer build --fix-perms "${SANDBOX_SIF}" "${SANDBOX_DIR}/claude-sandbox.def" 2>/dev/null; then
+        echo "Trying with --fakeroot..."
+        apptainer build --fakeroot "${SANDBOX_SIF}" "${SANDBOX_DIR}/claude-sandbox.def"
+    fi
+    echo "Container built: ${SANDBOX_SIF}"
+}
+
+# Detect Julia installation path
+detect_julia() {
+    local julia_bin
+    julia_bin=$(which julia 2>/dev/null) || true
+    if [ -n "${julia_bin}" ]; then
+        dirname "$(dirname "$(readlink -f "${julia_bin}")")"
+    fi
+}
+
+# Run container
+run_container() {
+    [ ! -f "${SANDBOX_SIF}" ] && { echo "Run 'claude-sandbox --build' first"; exit 1; }
+    init_sandbox_home
+
+    local OPTS=(
+        --containall --cleanenv --userns --nv
+        --home "${SANDBOX_HOME}:/home/sandbox"
+        --pwd "$(pwd)"
+        --bind "$(pwd):$(pwd)"
+    )
+
+    # GitHub CLI credentials (read-only)
+    [ -d "${HOME}/.config/gh" ] && OPTS+=(--bind "${HOME}/.config/gh:/home/sandbox/.config/gh:ro")
+
+    # Julia packages and installation
+    [ -d "${HOME}/.julia" ] && OPTS+=(--bind "${HOME}/.julia:/home/sandbox/.julia")
+    local julia_home; julia_home=$(detect_julia)
+    [ -n "${julia_home}" ] && OPTS+=(--bind "${julia_home}:${julia_home}:ro")
+
+    # Environment variables
+    OPTS+=(--env "TERM=${TERM:-xterm-256color}")
+    OPTS+=(--env "UV_PROJECT_ENVIRONMENT=.venv-sandbox")
+
+    local git_name git_email
+    git_name=$(git config --global user.name 2>/dev/null) || true
+    git_email=$(git config --global user.email 2>/dev/null) || true
+    [ -n "${git_name}" ] && OPTS+=(--env "GIT_AUTHOR_NAME=${git_name}" --env "GIT_COMMITTER_NAME=${git_name}")
+    [ -n "${git_email}" ] && OPTS+=(--env "GIT_AUTHOR_EMAIL=${git_email}" --env "GIT_COMMITTER_EMAIL=${git_email}")
+
+    # Add Julia to PATH if detected
+    [ -n "${julia_home}" ] && OPTS+=(--env "PATH=${julia_home}/bin:\$PATH")
+
+    exec apptainer exec "${OPTS[@]}" "${SANDBOX_SIF}" claude "$@"
+}
+
+case "${1:-}" in
+    --build) build_container ;;
+    --help|-h) echo "Usage: claude-sandbox [--build|--help] [CLAUDE_ARGS...]" ;;
+    *) run_container "$@" ;;
+esac
