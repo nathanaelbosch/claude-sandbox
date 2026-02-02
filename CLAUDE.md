@@ -1,0 +1,52 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+Claude Code Apptainer Sandbox - a containerized environment that runs Claude Code in an isolated Apptainer container with strict security boundaries. It provides sandboxed execution while selectively allowing access to specific resources (working directory, GitHub credentials, Julia installations).
+
+## Build and Run Commands
+
+```bash
+# Build the container (first run or to rebuild)
+claude-sandbox --build
+
+# Run Claude Code in sandbox
+claude-sandbox
+
+# Pass arguments to Claude Code
+claude-sandbox [CLAUDE_ARGS...]
+
+# Installation (run from repo root)
+./install.sh
+```
+
+## Architecture
+
+The project consists of three main components:
+
+1. **`claude-sandbox`** (bash script) - Runner that detects Julia, initializes persistent storage at `~/.claude-sandbox-home/`, constructs Apptainer bind mounts, and executes Claude Code inside the container
+
+2. **`claude-sandbox.def`** (Apptainer definition) - Container recipe based on `node:22-slim` that installs Node.js 22, Python 3.11, uv, gh, git, tmux, and Claude Code CLI
+
+3. **`install.sh`** - Creates symlinks in `~/.local/share/claude-sandbox/` and `~/.local/bin/`
+
+## Security Model
+
+**Read-Write Access:**
+- Current working directory
+- `~/.julia/` (Julia packages)
+- `~/.claude-sandbox-home/` (persistent sandbox home)
+
+**Read-Only Access:**
+- `~/.config/gh/` (GitHub CLI credentials)
+- Julia binaries (auto-detected from host)
+
+**Blocked:** SSH keys, AWS credentials, home directory (except `.config/gh`), host environment variables
+
+## Container Environment
+
+- Uses `.venv-sandbox/` for Python venvs (via `UV_PROJECT_ENVIRONMENT`) to avoid conflicts with host `.venv/`
+- Git author/email passed from host via environment variables
+- NVIDIA GPU support via `--nv` flag
