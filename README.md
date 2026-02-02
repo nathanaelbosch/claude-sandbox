@@ -18,15 +18,24 @@ Blocked: `~/.ssh`, `~/.aws`, `~/.config` (except gh), other directories, host en
 
 ## Installation
 
-1. Clone this repo and symlink to `~/.local/share/claude-sandbox/`:
+1. Clone this repo anywhere you like:
    ```bash
-   git clone git@github.com:nathanaelbosch/claude-sandbox.git ~/claude-sandbox
-   mkdir -p ~/.local/share/claude-sandbox
-   ln -sf ~/claude-sandbox/claude-sandbox ~/.local/share/claude-sandbox/claude-sandbox
-   ln -sf ~/claude-sandbox/claude-sandbox.def ~/.local/share/claude-sandbox/claude-sandbox.def
+   git clone git@github.com:nathanaelbosch/claude-sandbox.git
+   cd claude-sandbox
    ```
 
-2. Add `~/.local/share/claude-sandbox` to your PATH, or symlink the script to `~/bin/`.
+2. Run the install script:
+   ```bash
+   ./install.sh
+   ```
+
+   Or install manually:
+   ```bash
+   mkdir -p ~/.local/share/claude-sandbox ~/.local/bin
+   ln -sf "$(pwd)/claude-sandbox" ~/.local/share/claude-sandbox/claude-sandbox
+   ln -sf "$(pwd)/claude-sandbox.def" ~/.local/share/claude-sandbox/claude-sandbox.def
+   ln -sf ~/.local/share/claude-sandbox/claude-sandbox ~/.local/bin/claude-sandbox
+   ```
 
 3. Build the container:
    ```bash
