@@ -1,78 +1,57 @@
-# Claude Code Apptainer Sandbox
+# claude-sandbox
 
-Run Claude Code in an isolated Apptainer container with strict security boundaries.
+Run [Claude Code](https://claude.ai/code) in an isolated [Apptainer](https://apptainer.org) container.
 
-## What's Isolated
+Blocks access to SSH keys, AWS credentials, and most of your home directory while allowing Claude to work normally in your current project.
 
-| Resource | Access |
-|----------|--------|
-| Current directory | Read-write |
-| Network | Allowed |
-| GPU (NVIDIA) | Allowed |
-| `~/.config/gh/` | Read-only |
-| `~/.julia/` | Read-write |
-| Julia binaries | Read-only |
-| **Everything else** | **Blocked** |
+## Install
 
-Blocked: `~/.ssh`, `~/.aws`, `~/.config` (except gh), other directories, host environment variables.
+Requires [Apptainer](https://apptainer.org/docs/admin/main/installation.html).
 
-## Installation
-
-1. Clone this repo anywhere you like:
-   ```bash
-   git clone git@github.com:nathanaelbosch/claude-sandbox.git
-   cd claude-sandbox
-   ```
-
-2. Run the install script:
-   ```bash
-   ./install.sh
-   ```
-
-   Or install manually:
-   ```bash
-   mkdir -p ~/.local/share/claude-sandbox ~/.local/bin
-   ln -sf "$(pwd)/claude-sandbox" ~/.local/share/claude-sandbox/claude-sandbox
-   ln -sf "$(pwd)/claude-sandbox.def" ~/.local/share/claude-sandbox/claude-sandbox.def
-   ln -sf ~/.local/share/claude-sandbox/claude-sandbox ~/.local/bin/claude-sandbox
-   ```
-
-3. Build the container:
-   ```bash
-   claude-sandbox --build
-   ```
+```bash
+git clone git@github.com:nathanaelbosch/claude-sandbox.git
+cd claude-sandbox && ./install.sh
+claude-sandbox --build
+```
 
 ## Usage
 
 ```bash
-claude-sandbox              # Start Claude Code in sandbox
-claude-sandbox --help       # Show help
-claude-sandbox --build      # Build/rebuild container
+claude-sandbox           # Run Claude Code in sandbox
+claude-sandbox --build   # Rebuild container
 ```
 
-## Features
+## How It Works
 
-- **Node.js 22** for Claude Code
-- **Python 3.11** with `uv` package manager
-- **Julia** auto-detected and bind-mounted from host
-- **GitHub CLI** with read-only credential passthrough
-- **Git** with author/email passed via environment variables
+**Read-write access:**
+- Current working directory
+- `~/.julia/` (Julia packages)
+- `~/.claude-sandbox-home/` (persistent container home)
 
-## Python Virtual Environments
+**Read-only access:**
+- `~/.config/gh/` (GitHub CLI credentials for `gh` commands)
+- Julia binaries (auto-detected from host)
 
-The sandbox uses separate venvs from the host to avoid conflicts:
-- Host: `.venv/` (default)
-- Container: `.venv-sandbox/` (via `UV_PROJECT_ENVIRONMENT`)
+**Blocked:**
+- `~/.ssh/`, `~/.aws/`, `~/.config/` (except gh), host environment variables
 
-Add to your global gitignore:
+### Python
+
+Python 3.11 and [uv](https://docs.astral.sh/uv/) are installed inside the container. To avoid conflicts with host virtual environments, the container uses `.venv-sandbox/` instead of `.venv/`.
+
+Add to your gitignore:
 ```bash
-echo ".venv-sandbox/" >> ~/.config/git/ignore
+echo ".venv-sandbox/" >> .gitignore
 ```
 
-## Persistence
+### Julia
 
-Container home is persisted at `~/.claude-sandbox-home/`, preserving:
-- Claude credentials
-- Shell history
-- uv tools
-- npm globals
+Julia binaries are detected from your host system and bind-mounted read-only. The `~/.julia/` directory is mounted read-write for package management.
+
+## Disclaimer
+
+This is a personal project. I'm not a security or container expert—use at your own risk and don't rely on this for security-critical environments.
+
+## Contributing
+
+Issues, feedback, and pull requests welcome.
