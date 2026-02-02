@@ -38,12 +38,16 @@ build_container() {
     echo "Container built: ${SANDBOX_SIF}"
 }
 
-# Detect Julia installation path
+# Detect Julia installation path (only non-system installs)
 detect_julia() {
-    local julia_bin
+    local julia_bin julia_home
     julia_bin=$(which julia 2>/dev/null) || true
     if [ -n "${julia_bin}" ]; then
-        dirname "$(dirname "$(readlink -f "${julia_bin}")")"
+        julia_home=$(dirname "$(dirname "$(readlink -f "${julia_bin}")")")
+        # Skip system-installed Julia to avoid shadowing container's /usr
+        if [ "${julia_home}" != "/usr" ] && [ "${julia_home}" != "/usr/local" ]; then
+            echo "${julia_home}"
+        fi
     fi
 }
 
@@ -77,8 +81,10 @@ run_container() {
     [ -n "${git_name}" ] && OPTS+=(--env "GIT_AUTHOR_NAME=${git_name}" --env "GIT_COMMITTER_NAME=${git_name}")
     [ -n "${git_email}" ] && OPTS+=(--env "GIT_AUTHOR_EMAIL=${git_email}" --env "GIT_COMMITTER_EMAIL=${git_email}")
 
-    # Add Julia to PATH if detected
-    [ -n "${julia_home}" ] && OPTS+=(--env "PATH=${julia_home}/bin:\$PATH")
+    # Set PATH (include Julia if detected)
+    local container_path="/home/sandbox/.local/bin:/usr/local/bin:/usr/bin:/bin"
+    [ -n "${julia_home}" ] && container_path="${julia_home}/bin:${container_path}"
+    OPTS+=(--env "PATH=${container_path}")
 
     exec apptainer exec "${OPTS[@]}" "${SANDBOX_SIF}" claude "$@"
 }
