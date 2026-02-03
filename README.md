@@ -28,8 +28,10 @@ claude-sandbox --build   # Rebuild container
 - `~/.julia/` (Julia packages)
 - `~/.claude-sandbox-home/` (persistent container home)
 
+**Ephemeral copy:**
+- `~/.config/gh/` → `/tmp/.config/gh` (GitHub CLI credentials, copied fresh each run)
+
 **Read-only access:**
-- `~/.config/gh/` (GitHub CLI credentials for `gh` commands)
 - Julia binaries (auto-detected from host)
 
 **Blocked:**

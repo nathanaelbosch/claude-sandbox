@@ -66,8 +66,12 @@ run_container() {
         --bind "${SANDBOX_TMP}:/tmp"
     )
 
-    # GitHub CLI credentials (read-only)
-    [ -d "${HOME}/.config/gh" ] && OPTS+=(--bind "${HOME}/.config/gh:/home/sandbox/.config/gh:ro")
+    # GitHub CLI credentials (copy to writable temp location - gh needs write access for migrations)
+    if [ -d "${HOME}/.config/gh" ]; then
+        mkdir -p "${SANDBOX_TMP}/.config/gh"
+        cp -r "${HOME}/.config/gh/"* "${SANDBOX_TMP}/.config/gh/"
+        OPTS+=(--env "GH_CONFIG_DIR=/tmp/.config/gh")
+    fi
 
     # Julia packages and installation
     [ -d "${HOME}/.julia" ] && OPTS+=(--bind "${HOME}/.julia:/home/sandbox/.julia")

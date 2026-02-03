@@ -39,11 +39,13 @@ The project consists of three main components:
 - `~/.julia/` (Julia packages)
 - `~/.claude-sandbox-home/` (persistent sandbox home)
 
+**Ephemeral Copy (fresh each run):**
+- `~/.config/gh/` → copied to `/tmp/.config/gh` so gh can perform config migrations
+
 **Read-Only Access:**
-- `~/.config/gh/` (GitHub CLI credentials)
 - Julia binaries (auto-detected from host)
 
-**Blocked:** SSH keys, AWS credentials, home directory (except `.config/gh`), host environment variables
+**Blocked:** SSH keys, AWS credentials, home directory, host environment variables
 
 ## Container Environment
 
