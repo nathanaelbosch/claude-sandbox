@@ -89,7 +89,7 @@ run_container() {
     [ -n "${julia_home}" ] && container_path="${julia_home}/bin:${container_path}"
     OPTS+=(--env "PATH=${container_path}")
 
-    exec apptainer exec "${OPTS[@]}" "${SANDBOX_SIF}" claude "$@"
+    exec apptainer run "${OPTS[@]}" "${SANDBOX_SIF}" "$@"
 }
 
 case "${1:-}" in

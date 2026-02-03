@@ -26,8 +26,8 @@ From: node:22-slim
     mv /root/.local/bin/uv /usr/local/bin/
     mv /root/.local/bin/uvx /usr/local/bin/
 
-    # Claude Code and ccstatusline
-    npm install -g @anthropic-ai/claude-code ccstatusline
+    # ccstatusline (for tmux status line)
+    npm install -g ccstatusline
 
 %environment
     export PATH="/usr/local/bin:$HOME/.local/bin:$PATH"
@@ -36,4 +36,9 @@ From: node:22-slim
     export UV_PROJECT_ENVIRONMENT=.venv-sandbox
 
 %runscript
-    exec claude "$@"
+    # Install Claude Code on first run (enables auto-updates)
+    if [ ! -x "$HOME/.local/bin/claude" ]; then
+        echo "Installing Claude Code..."
+        curl -fsSL https://claude.ai/install.sh | bash -s stable
+    fi
+    exec "$HOME/.local/bin/claude" "$@"
