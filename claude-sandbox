@@ -3,6 +3,7 @@ set -euo pipefail
 
 SANDBOX_DIR="${HOME}/.local/share/claude-sandbox"
 SANDBOX_HOME="${HOME}/.claude-sandbox-home"
+SANDBOX_TMP="/tmp/claude-sandbox"
 SANDBOX_SIF="${SANDBOX_DIR}/claude-sandbox.sif"
 
 # Initialize persistent home directory
@@ -55,12 +56,14 @@ detect_julia() {
 run_container() {
     [ ! -f "${SANDBOX_SIF}" ] && { echo "Run 'claude-sandbox --build' first"; exit 1; }
     init_sandbox_home
+    mkdir -p "${SANDBOX_TMP}"
 
     local OPTS=(
         --containall --cleanenv --userns --nv
         --home "${SANDBOX_HOME}:/home/sandbox"
         --pwd "$(pwd)"
         --bind "$(pwd):$(pwd)"
+        --bind "${SANDBOX_TMP}:/tmp"
     )
 
     # GitHub CLI credentials (read-only)
