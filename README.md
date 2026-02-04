@@ -52,7 +52,7 @@ echo ".venv-sandbox/" >> .gitignore
 
 Julia binaries are detected from your host system and bind-mounted read-only. The `~/.julia/` directory is mounted read-write for package management.
 
-To support precompilation caches that contain hardcoded paths (e.g., in `deps.jl` files), `~/.julia/` is also exposed read-only at its original host path.
+To support precompilation caches that contain hardcoded paths (e.g., in `deps.jl` files), `~/.julia/` is also exposed read-only at its original host path. The working directory bind takes precedence, so you can work inside `~/.julia/dev/` with full write access.
 
 ## Disclaimer
 

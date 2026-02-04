@@ -62,9 +62,11 @@ run_container() {
         --containall --cleanenv --userns --nv
         --home "${SANDBOX_HOME}:/home/sandbox"
         --pwd "$(pwd)"
-        --bind "$(pwd):$(pwd)"
         --bind "${SANDBOX_TMP}:/tmp"
     )
+
+    # Working directory bind is added later (after Julia binds) to ensure
+    # it takes precedence when working inside ~/.julia/
 
     # GitHub CLI credentials (copy to writable temp location - gh needs write access for migrations)
     if [ -d "${HOME}/.config/gh" ]; then
@@ -86,6 +88,9 @@ run_container() {
 
     # UV Python installations (for PyCall and other Python-dependent Julia packages)
     [ -d "${HOME}/.local/share/uv/python" ] && OPTS+=(--bind "${HOME}/.local/share/uv/python:${HOME}/.local/share/uv/python:ro")
+
+    # Working directory - added after Julia binds so it takes precedence when inside ~/.julia/
+    OPTS+=(--bind "$(pwd):$(pwd)")
 
     # Environment variables
     OPTS+=(--env "TERM=${TERM:-xterm-256color}")
