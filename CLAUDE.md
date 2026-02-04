@@ -54,3 +54,11 @@ The project consists of three main components:
 - Uses `.venv-sandbox/` for Python venvs (via `UV_PROJECT_ENVIRONMENT`) to avoid conflicts with host `.venv/`
 - Git author/email passed from host via environment variables
 - NVIDIA GPU support via `--nv` flag
+
+## Documentation
+
+When making changes to the codebase, keep documentation in sync:
+- **README.md** - Update the "How It Works" section when changing bind mounts or security model
+- **CLAUDE.md** - Update the "Security Model" or "Architecture" sections for structural changes
+
+Include documentation updates in the same commit as the corresponding code changes.
