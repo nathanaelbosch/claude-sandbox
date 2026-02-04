@@ -74,9 +74,18 @@ run_container() {
     fi
 
     # Julia packages and installation
-    [ -d "${HOME}/.julia" ] && OPTS+=(--bind "${HOME}/.julia:/home/sandbox/.julia")
+    # Bind to sandbox home for normal access, AND to original host path so
+    # hardcoded paths in precompiled cache/deps files still work
+    if [ -d "${HOME}/.julia" ]; then
+        OPTS+=(--bind "${HOME}/.julia:/home/sandbox/.julia")
+        # Also expose at original path (read-only) for precompilation cache compatibility
+        [ "${HOME}" != "/home/sandbox" ] && OPTS+=(--bind "${HOME}/.julia:${HOME}/.julia:ro")
+    fi
     local julia_home; julia_home=$(detect_julia)
     [ -n "${julia_home}" ] && OPTS+=(--bind "${julia_home}:${julia_home}:ro")
+
+    # UV Python installations (for PyCall and other Python-dependent Julia packages)
+    [ -d "${HOME}/.local/share/uv/python" ] && OPTS+=(--bind "${HOME}/.local/share/uv/python:${HOME}/.local/share/uv/python:ro")
 
     # Environment variables
     OPTS+=(--env "TERM=${TERM:-xterm-256color}")

@@ -33,6 +33,8 @@ claude-sandbox --build   # Rebuild container
 
 **Read-only access:**
 - Julia binaries (auto-detected from host)
+- `~/.julia/` at original host path (for precompilation cache compatibility)
+- `~/.local/share/uv/python/` (for PyCall and Python-dependent Julia packages)
 
 **Blocked:**
 - `~/.ssh/`, `~/.aws/`, `~/.config/` (except gh), host environment variables
@@ -49,6 +51,8 @@ echo ".venv-sandbox/" >> .gitignore
 ### Julia
 
 Julia binaries are detected from your host system and bind-mounted read-only. The `~/.julia/` directory is mounted read-write for package management.
+
+To support precompilation caches that contain hardcoded paths (e.g., in `deps.jl` files), `~/.julia/` is also exposed read-only at its original host path.
 
 ## Disclaimer
 

@@ -44,6 +44,8 @@ The project consists of three main components:
 
 **Read-Only Access:**
 - Julia binaries (auto-detected from host)
+- `~/.julia/` at original host path (for precompilation cache compatibility)
+- `~/.local/share/uv/python/` (for PyCall and Python-dependent Julia packages)
 
 **Blocked:** SSH keys, AWS credentials, home directory, host environment variables
 
