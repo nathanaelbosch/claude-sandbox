@@ -28,7 +28,7 @@ The project consists of three main components:
 
 1. **`claude-sandbox`** (bash script) - Runner that detects Julia, initializes persistent storage at `~/.claude-sandbox-home/`, constructs Apptainer bind mounts, and executes Claude Code inside the container
 
-2. **`claude-sandbox.def`** (Apptainer definition) - Container recipe based on `node:22-slim` that installs Node.js 22, Python 3.11, uv, gh, git, tmux, and Claude Code CLI
+2. **`claude-sandbox.def`** (Apptainer definition) - Container recipe based on `node:22-slim` that installs Node.js 22, Python 3.11, uv, gh, git, git-lfs, tmux, and Claude Code CLI
 
 3. **`install.sh`** - Creates symlinks in `~/.local/share/claude-sandbox/` and `~/.local/bin/`
 

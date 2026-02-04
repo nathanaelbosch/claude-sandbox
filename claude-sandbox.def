@@ -9,7 +9,7 @@ From: node:22-slim
     export DEBIAN_FRONTEND=noninteractive
 
     apt-get update && apt-get install -y --no-install-recommends \
-        git curl wget tmux ca-certificates gnupg \
+        git git-lfs curl wget tmux ca-certificates gnupg \
         python3 python3-pip python3-venv bash \
         g++ make \
         && rm -rf /var/lib/apt/lists/*
