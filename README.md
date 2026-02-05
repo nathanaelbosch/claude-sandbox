@@ -54,6 +54,19 @@ Julia binaries are detected from your host system and bind-mounted read-only. Th
 
 To support precompilation caches that contain hardcoded paths (e.g., in `deps.jl` files), `~/.julia/` is also exposed read-write at its original host path.
 
+### Playwright / Browser Automation
+
+Playwright system dependencies for Chromium are pre-installed in the container.
+
+**Setup** (run inside sandbox):
+```bash
+npx playwright install chromium
+```
+
+Browsers are cached in the persistent sandbox home (`~/.claude-sandbox-home/`).
+
+**Note:** The sandbox uses isolated `/dev/shm` for security. Playwright works because it defaults to `--disable-dev-shm-usage`, which writes to `/tmp` instead of shared memory.
+
 ### agent-shell (Emacs ACP)
 
 The container includes [`claude-agent-acp`](https://github.com/zed-industries/claude-agent-acp), an ACP bridge for use with [agent-shell](https://github.com/xenodium/agent-shell) in Emacs. Use `--exec` to run it inside the sandbox:

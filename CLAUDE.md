@@ -58,6 +58,7 @@ The project consists of three main components:
 - Uses `.venv-sandbox/` for Python venvs (via `UV_PROJECT_ENVIRONMENT`) to avoid conflicts with host `.venv/`
 - Git author/email passed from host via environment variables
 - NVIDIA GPU support via `--nv` flag
+- Playwright/Chromium supported with isolated `/dev/shm` (uses `--disable-dev-shm-usage` workaround)
 - `--exec` mode runs arbitrary commands (e.g., `claude-agent-acp`) with the same isolation as the default mode; uses `apptainer exec` instead of `apptainer run`
 
 ## Documentation

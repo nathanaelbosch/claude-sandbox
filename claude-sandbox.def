@@ -35,6 +35,9 @@ From: node:22-slim
     curl -fsSL https://github.com/typst/typst/releases/latest/download/typst-x86_64-unknown-linux-musl.tar.xz | \
         tar -xJ --wildcards --strip-components=1 -C /usr/local/bin/ '*/typst'
 
+    # Playwright Chromium system dependencies (browser installed at runtime by user)
+    npx playwright install-deps chromium
+
     # ccstatusline (for tmux status line)
     npm install -g ccstatusline
 

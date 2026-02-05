@@ -134,6 +134,10 @@ run_container() {
     [ -n "${git_name}" ] && OPTS+=(--env "GIT_AUTHOR_NAME=${git_name}" --env "GIT_COMMITTER_NAME=${git_name}")
     [ -n "${git_email}" ] && OPTS+=(--env "GIT_AUTHOR_EMAIL=${git_email}" --env "GIT_COMMITTER_EMAIL=${git_email}")
 
+    # Playwright/Chromium: ensure shared memory workaround is active
+    # (container uses isolated /dev/shm for security; this tells Chromium to use /tmp instead)
+    OPTS+=(--env "PLAYWRIGHT_CHROMIUM_ARGS=--disable-dev-shm-usage")
+
     # Set PATH (include Julia if detected)
     local container_path="/home/sandbox/.local/bin:/usr/local/bin:/usr/bin:/bin"
     if [ -n "${julia_home}" ]; then
