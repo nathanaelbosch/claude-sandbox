@@ -3,8 +3,23 @@ set -euo pipefail
 
 SANDBOX_DIR="${HOME}/.local/share/claude-sandbox"
 SANDBOX_HOME="${HOME}/.claude-sandbox-home"
-SANDBOX_TMP="/tmp/claude-sandbox"
 SANDBOX_SIF="${SANDBOX_DIR}/claude-sandbox.sif"
+
+# Per-user tmp base directory (avoid conflicts with other users)
+SANDBOX_TMP_BASE="/tmp/claude-sandbox-${UID}"
+
+# Instance-specific tmp directory (set in run_container)
+SANDBOX_TMP=""
+
+# Cleanup temp directory on exit
+cleanup() {
+    if [ -n "${SANDBOX_TMP}" ] && [ -d "${SANDBOX_TMP}" ]; then
+        rm -rf "${SANDBOX_TMP}"
+        # Remove base dir if empty (ignore failure if other instances exist)
+        rmdir "${SANDBOX_TMP_BASE}" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
 
 # Initialize persistent home directory
 init_sandbox_home() {
@@ -56,7 +71,11 @@ detect_julia() {
 run_container() {
     [ ! -f "${SANDBOX_SIF}" ] && { echo "Run 'claude-sandbox --build' first"; exit 1; }
     init_sandbox_home
-    mkdir -p "${SANDBOX_TMP}"
+
+    # Create per-instance temp directory (cleaned up on exit via trap)
+    mkdir -p "${SANDBOX_TMP_BASE}"
+    chmod 700 "${SANDBOX_TMP_BASE}"  # Restrict to owner only
+    SANDBOX_TMP=$(mktemp -d "${SANDBOX_TMP_BASE}/instance.XXXXXX")
 
     local OPTS=(
         --containall --cleanenv --userns --nv

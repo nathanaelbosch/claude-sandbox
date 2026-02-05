@@ -49,6 +49,8 @@ The project consists of three main components:
 
 **Blocked:** SSH keys, AWS credentials, home directory, host environment variables
 
+**Instance Isolation:** Each container instance gets its own temp directory (`/tmp/claude-sandbox-$UID/instance.XXXXXX`), ensuring multiple users and multiple instances don't interfere with each other. Temp directories are cleaned up on exit.
+
 ## Container Environment
 
 - Uses `.venv-sandbox/` for Python venvs (via `UV_PROJECT_ENVIRONMENT`) to avoid conflicts with host `.venv/`
