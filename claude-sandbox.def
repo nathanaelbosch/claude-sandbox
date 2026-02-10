@@ -41,6 +41,6 @@ From: node:22-slim
     # Install Claude Code on first run (enables auto-updates)
     if [ ! -x "$HOME/.local/bin/claude" ]; then
         echo "Installing Claude Code..."
-        curl -fsSL https://claude.ai/install.sh | bash -s stable
+        curl -fsSL https://claude.ai/install.sh | bash -s latest
     fi
     exec "$HOME/.local/bin/claude" "$@"
