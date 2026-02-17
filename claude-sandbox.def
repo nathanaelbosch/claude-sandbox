@@ -13,6 +13,7 @@ From: node:22-slim
         python3 python3-pip python3-venv bash \
         g++ make \
         procps \
+        sqlite3 libsqlite3-dev \
         bsdmainutils tree file less jq zip unzip rsync \
         && rm -rf /var/lib/apt/lists/*
 
