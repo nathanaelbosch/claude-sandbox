@@ -54,7 +54,7 @@ build_container() {
     echo "Container built: ${SANDBOX_SIF}"
 }
 
-# Detect Julia installation path (only non-system installs)
+# Detect Julia installation path
 detect_julia() {
     local julia_bin julia_home
     julia_bin=$(which julia 2>/dev/null) || true
@@ -62,6 +62,15 @@ detect_julia() {
         julia_home=$(dirname "$(dirname "$(readlink -f "${julia_bin}")")")
         # Skip system-installed Julia to avoid shadowing container's /usr
         if [ "${julia_home}" != "/usr" ] && [ "${julia_home}" != "/usr/local" ]; then
+            echo "${julia_home}"
+            return
+        fi
+    fi
+
+    # Fallback: ask Julia for its actual location (handles juliaup wrappers)
+    if command -v julia &>/dev/null; then
+        julia_home=$(julia --startup-file=no -e 'println(dirname(Sys.BINDIR))' 2>/dev/null) || true
+        if [ -n "${julia_home}" ] && [ -x "${julia_home}/bin/julia" ]; then
             echo "${julia_home}"
         fi
     fi
@@ -103,7 +112,10 @@ run_container() {
         [ "${HOME}" != "/home/sandbox" ] && OPTS+=(--bind "${HOME}/.julia:${HOME}/.julia:ro")
     fi
     local julia_home; julia_home=$(detect_julia)
-    [ -n "${julia_home}" ] && OPTS+=(--bind "${julia_home}:${julia_home}:ro")
+    # Only bind Julia install if it's not already under ~/.julia/ (which is already bound)
+    if [ -n "${julia_home}" ] && [[ "${julia_home}" != "${HOME}/.julia"* ]]; then
+        OPTS+=(--bind "${julia_home}:${julia_home}:ro")
+    fi
 
     # UV Python installations (for PyCall and other Python-dependent Julia packages)
     [ -d "${HOME}/.local/share/uv/python" ] && OPTS+=(--bind "${HOME}/.local/share/uv/python:${HOME}/.local/share/uv/python:ro")
@@ -123,7 +135,14 @@ run_container() {
 
     # Set PATH (include Julia if detected)
     local container_path="/home/sandbox/.local/bin:/usr/local/bin:/usr/bin:/bin"
-    [ -n "${julia_home}" ] && container_path="${julia_home}/bin:${container_path}"
+    if [ -n "${julia_home}" ]; then
+        # Translate juliaup paths (under ~/.julia/) to the container home
+        if [[ "${julia_home}" == "${HOME}/.julia"* ]]; then
+            container_path="/home/sandbox/.julia${julia_home#"${HOME}/.julia"}/bin:${container_path}"
+        else
+            container_path="${julia_home}/bin:${container_path}"
+        fi
+    fi
     OPTS+=(--env "PATH=${container_path}")
 
     exec apptainer run "${OPTS[@]}" "${SANDBOX_SIF}" "$@"
