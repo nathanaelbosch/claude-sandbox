@@ -108,8 +108,9 @@ run_container() {
     # hardcoded paths in precompiled cache/deps files still work
     if [ -d "${HOME}/.julia" ]; then
         OPTS+=(--bind "${HOME}/.julia:/home/sandbox/.julia")
-        # Also expose at original path (read-only) for precompilation cache compatibility
-        [ "${HOME}" != "/home/sandbox" ] && OPTS+=(--bind "${HOME}/.julia:${HOME}/.julia:ro")
+        # Also expose at original host path so hardcoded paths in precompilation
+        # cache/deps files still resolve (e.g., PyCall conda, artifact paths)
+        [ "${HOME}" != "/home/sandbox" ] && OPTS+=(--bind "${HOME}/.julia:${HOME}/.julia")
     fi
     local julia_home; julia_home=$(detect_julia)
     # Only bind Julia install if it's not already under ~/.julia/ (which is already bound)
