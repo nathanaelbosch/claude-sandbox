@@ -30,6 +30,10 @@ From: node:22-slim
     mv /root/.local/bin/uv /usr/local/bin/
     mv /root/.local/bin/uvx /usr/local/bin/
 
+    # Typst (document compiler)
+    curl -fsSL https://github.com/typst/typst/releases/latest/download/typst-x86_64-unknown-linux-musl.tar.xz | \
+        tar -xJ --strip-components=1 -C /usr/local/bin/ '*/typst'
+
     # ccstatusline (for tmux status line)
     npm install -g ccstatusline
 
