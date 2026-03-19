@@ -146,11 +146,26 @@ run_container() {
     fi
     OPTS+=(--env "PATH=${container_path}")
 
-    exec apptainer run "${OPTS[@]}" "${SANDBOX_SIF}" "$@"
+    if [ "${EXEC_MODE:-}" = true ]; then
+        # Exec mode: run arbitrary command inside the container.
+        # Ensure claude CLI is installed first (normally done by runscript).
+        # Installation output goes to stderr to keep stdin/stdout clean for
+        # protocols like ACP that communicate over stdio.
+        exec apptainer exec "${OPTS[@]}" "${SANDBOX_SIF}" bash -c '
+            if [ ! -x "$HOME/.local/bin/claude" ]; then
+                echo "Installing Claude Code..." >&2
+                curl -fsSL https://claude.ai/install.sh | bash -s latest >&2
+            fi
+            exec "$@"
+        ' _ "$@"
+    else
+        exec apptainer run "${OPTS[@]}" "${SANDBOX_SIF}" "$@"
+    fi
 }
 
 case "${1:-}" in
     --build) build_container ;;
-    --help|-h) echo "Usage: claude-sandbox [--build|--help] [CLAUDE_ARGS...]" ;;
+    --exec) shift; EXEC_MODE=true run_container "$@" ;;
+    --help|-h) echo "Usage: claude-sandbox [--build|--exec CMD [ARGS...]|--help] [CLAUDE_ARGS...]" ;;
     *) run_container "$@" ;;
 esac

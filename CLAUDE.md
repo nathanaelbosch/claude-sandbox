@@ -18,6 +18,9 @@ claude-sandbox
 # Pass arguments to Claude Code
 claude-sandbox [CLAUDE_ARGS...]
 
+# Run arbitrary command inside the sandbox (e.g., claude-agent-acp for Emacs ACP)
+claude-sandbox --exec CMD [ARGS...]
+
 # Installation (run from repo root)
 ./install.sh
 ```
@@ -28,7 +31,7 @@ The project consists of three main components:
 
 1. **`claude-sandbox`** (bash script) - Runner that detects Julia, initializes persistent storage at `~/.claude-sandbox-home/`, constructs Apptainer bind mounts, and executes Claude Code inside the container
 
-2. **`claude-sandbox.def`** (Apptainer definition) - Container recipe based on `node:22-slim` that installs Node.js 22, Python 3.11, uv, gh, git, git-lfs, tmux, gfortran, and Claude Code CLI
+2. **`claude-sandbox.def`** (Apptainer definition) - Container recipe based on `node:22-slim` that installs Node.js 22, Python 3.11, uv, gh, git, git-lfs, tmux, gfortran, claude-agent-acp, and Claude Code CLI
 
 3. **`install.sh`** - Creates symlinks in `~/.local/share/claude-sandbox/` and `~/.local/bin/`
 
@@ -55,6 +58,7 @@ The project consists of three main components:
 - Uses `.venv-sandbox/` for Python venvs (via `UV_PROJECT_ENVIRONMENT`) to avoid conflicts with host `.venv/`
 - Git author/email passed from host via environment variables
 - NVIDIA GPU support via `--nv` flag
+- `--exec` mode runs arbitrary commands (e.g., `claude-agent-acp`) with the same isolation as the default mode; uses `apptainer exec` instead of `apptainer run`
 
 ## Documentation
 

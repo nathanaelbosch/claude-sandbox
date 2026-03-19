@@ -37,6 +37,9 @@ From: node:22-slim
     # ccstatusline (for tmux status line)
     npm install -g ccstatusline
 
+    # claude-agent-acp (ACP bridge for agent-shell / Emacs integration)
+    npm install -g @zed-industries/claude-agent-acp
+
 %environment
     export PATH="/usr/local/bin:$HOME/.local/bin:$PATH"
     export UV_TOOL_DIR="$HOME/.local/share/uv/tools"

@@ -17,8 +17,9 @@ claude-sandbox --build
 ## Usage
 
 ```bash
-claude-sandbox           # Run Claude Code in sandbox
-claude-sandbox --build   # Rebuild container
+claude-sandbox                        # Run Claude Code in sandbox
+claude-sandbox --build                # Rebuild container
+claude-sandbox --exec CMD [ARGS...]   # Run arbitrary command inside the sandbox
 ```
 
 ## How It Works
@@ -52,6 +53,21 @@ echo ".venv-sandbox/" >> .gitignore
 Julia binaries are detected from your host system and bind-mounted read-only. The `~/.julia/` directory is mounted read-write for package management.
 
 To support precompilation caches that contain hardcoded paths (e.g., in `deps.jl` files), `~/.julia/` is also exposed read-write at its original host path.
+
+### agent-shell (Emacs ACP)
+
+The container includes [`claude-agent-acp`](https://github.com/zed-industries/claude-agent-acp), an ACP bridge for use with [agent-shell](https://github.com/xenodium/agent-shell) in Emacs. Use `--exec` to run it inside the sandbox:
+
+```bash
+claude-sandbox --exec claude-agent-acp
+```
+
+In your Emacs config:
+```elisp
+(setq agent-shell-container-command-runner '("claude-sandbox" "--exec"))
+```
+
+All sandboxing constraints apply equally to `--exec` mode — the same bind mounts, env vars, and isolation flags are used.
 
 ## Disclaimer
 
