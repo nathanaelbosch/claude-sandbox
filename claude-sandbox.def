@@ -15,6 +15,7 @@ From: node:22-slim
         procps \
         sqlite3 libsqlite3-dev \
         texlive-latex-base texlive-latex-recommended texlive-latex-extra latexmk \
+        poppler-utils \
         bsdmainutils tree file less jq zip unzip rsync xz-utils \
         && rm -rf /var/lib/apt/lists/*
 
