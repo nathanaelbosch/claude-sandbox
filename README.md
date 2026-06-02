@@ -20,14 +20,57 @@ claude-sandbox --build
 claude-sandbox                        # Run Claude Code in sandbox
 claude-sandbox --build                # Rebuild container
 claude-sandbox --exec CMD [ARGS...]   # Run arbitrary command inside the sandbox
+claude-sandbox --profile NAME ...     # Use a separate login/config (e.g. work vs personal)
+claude-sandbox --shared-history ...   # Pool conversation transcripts across profiles
 ```
+
+### Profiles (multiple logins)
+
+By default the sandbox stores its login and config in `~/.claude-sandbox-home/`.
+Pass `--profile NAME` to use a dedicated home at `~/.claude-sandbox-home-NAME/`
+instead, giving that profile a completely independent Claude Code login, config,
+and history. Log in once per profile and switch freely without re-authenticating:
+
+```bash
+claude-sandbox --profile work       # first run: log in with the work subscription
+claude-sandbox --profile personal   # first run: log in with the personal subscription
+claude-sandbox --profile work       # thereafter: reuses the work login, no re-login
+```
+
+The profile can also be set via the `CLAUDE_SANDBOX_PROFILE` environment variable,
+which makes per-profile shell aliases easy:
+
+```bash
+alias claude-work='CLAUDE_SANDBOX_PROFILE=work claude-sandbox'
+alias claude-personal='CLAUDE_SANDBOX_PROFILE=personal claude-sandbox'
+```
+
+`--profile` works with `--exec` too, but must come before it (everything after
+`--exec` is treated as the command to run).
+
+#### Sharing history across profiles
+
+Profiles are isolated by default, including conversation history. Add
+`--shared-history` to pool the **conversation transcripts** (the resumable
+sessions, stored in `.claude/projects/`) in a common directory
+(`~/.claude-sandbox-shared/projects/`) that all profiles bind-mount:
+
+```bash
+claude-sandbox --profile work --shared-history       # work login, shared transcripts
+claude-sandbox --profile personal --shared-history   # personal login, same transcripts
+```
+
+Logins, config, and settings stay per-profile — only the transcripts are shared.
+Note that this lets either profile read conversations created under the other,
+so it crosses the work/personal boundary by design. The up-arrow input history
+(stored in `.claude.json` alongside account state) is *not* shared.
 
 ## How It Works
 
 **Read-write access:**
 - Current working directory
 - `~/.julia/` (Julia packages)
-- `~/.claude-sandbox-home/` (persistent container home)
+- `~/.claude-sandbox-home/` (persistent container home; `~/.claude-sandbox-home-NAME/` with `--profile NAME`)
 
 **Ephemeral copy:**
 - `~/.config/gh/` → `/tmp/.config/gh` (GitHub CLI credentials, copied fresh each run)

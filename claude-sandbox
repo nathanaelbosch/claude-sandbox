@@ -5,6 +5,9 @@ SANDBOX_DIR="${HOME}/.local/share/claude-sandbox"
 SANDBOX_HOME="${HOME}/.claude-sandbox-home"
 SANDBOX_SIF="${SANDBOX_DIR}/claude-sandbox.sif"
 
+# Transcript pool shared across profiles when --shared-history is set
+SANDBOX_SHARED_PROJECTS="${HOME}/.claude-sandbox-shared/projects"
+
 # Per-user tmp base directory (avoid conflicts with other users)
 SANDBOX_TMP_BASE="/tmp/claude-sandbox-${UID}"
 
@@ -96,6 +99,16 @@ run_container() {
     # Working directory bind is added later (after Julia binds) to ensure
     # it takes precedence when working inside ~/.julia/
 
+    # Shared conversation transcripts across profiles (opt-in). Bound over the
+    # home so each profile keeps its own credentials/config but pools sessions.
+    # Session history is keyed by the working directory path, which is identical
+    # across profiles, so the same project resolves to the same transcripts.
+    if [ "${SHARED_HISTORY:-}" = true ]; then
+        mkdir -p "${SANDBOX_SHARED_PROJECTS}"
+        mkdir -p "${SANDBOX_HOME}/.claude/projects"  # ensure bind mount point exists
+        OPTS+=(--bind "${SANDBOX_SHARED_PROJECTS}:/home/sandbox/.claude/projects")
+    fi
+
     # GitHub CLI credentials (copy to writable temp location - gh needs write access for migrations)
     if [ -d "${HOME}/.config/gh" ]; then
         mkdir -p "${SANDBOX_TMP}/.config/gh"
@@ -163,9 +176,36 @@ run_container() {
     fi
 }
 
-case "${1:-}" in
-    --build) build_container ;;
-    --exec) shift; EXEC_MODE=true run_container "$@" ;;
-    --help|-h) echo "Usage: claude-sandbox [--build|--exec CMD [ARGS...]|--help] [CLAUDE_ARGS...]" ;;
-    *) run_container "$@" ;;
+# Parse leading sandbox options, then hand the rest to Claude Code / --exec.
+# --profile must come before --exec (everything after --exec is the command).
+PROFILE="${CLAUDE_SANDBOX_PROFILE:-}"
+SHARED_HISTORY=false
+EXEC_MODE=false
+ACTION="run"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --build) ACTION="build"; shift ;;
+        --exec) EXEC_MODE=true; shift; break ;;
+        --profile) PROFILE="${2:-}"; shift 2 ;;
+        --profile=*) PROFILE="${1#*=}"; shift ;;
+        --shared-history) SHARED_HISTORY=true; shift ;;
+        --help|-h) ACTION="help"; shift; break ;;
+        *) break ;;
+    esac
+done
+
+# Resolve profile -> dedicated persistent home (isolated login + config + history)
+if [ -n "${PROFILE}" ]; then
+    if [[ ! "${PROFILE}" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        echo "Invalid profile name: '${PROFILE}' (use letters, digits, '-' or '_')" >&2
+        exit 1
+    fi
+    SANDBOX_HOME="${HOME}/.claude-sandbox-home-${PROFILE}"
+fi
+
+case "${ACTION}" in
+    build) build_container ;;
+    help) echo "Usage: claude-sandbox [--profile NAME] [--shared-history] [--build|--exec CMD [ARGS...]|--help] [CLAUDE_ARGS...]" ;;
+    run) run_container "$@" ;;
 esac

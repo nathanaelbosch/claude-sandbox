@@ -21,6 +21,12 @@ claude-sandbox [CLAUDE_ARGS...]
 # Run arbitrary command inside the sandbox (e.g., claude-agent-acp for Emacs ACP)
 claude-sandbox --exec CMD [ARGS...]
 
+# Use a separate persistent home for an independent login/config (e.g. work vs personal)
+claude-sandbox --profile NAME [CLAUDE_ARGS...]
+
+# Pool conversation transcripts across profiles (keeps logins/config separate)
+claude-sandbox --profile NAME --shared-history [CLAUDE_ARGS...]
+
 # Installation (run from repo root)
 ./install.sh
 ```
@@ -40,7 +46,8 @@ The project consists of three main components:
 **Read-Write Access:**
 - Current working directory
 - `~/.julia/` (Julia packages)
-- `~/.claude-sandbox-home/` (persistent sandbox home)
+- `~/.claude-sandbox-home/` (persistent sandbox home; `--profile NAME` switches this to `~/.claude-sandbox-home-NAME/` for an isolated login/config/history)
+- `~/.claude-sandbox-shared/projects/` (only with `--shared-history`; bind-mounted over `/home/sandbox/.claude/projects` so profiles pool conversation transcripts while keeping separate credentials/config)
 
 **Ephemeral Copy (fresh each run):**
 - `~/.config/gh/` → copied to `/tmp/.config/gh` so gh can perform config migrations
@@ -59,6 +66,8 @@ The project consists of three main components:
 - Git author/email passed from host via environment variables
 - NVIDIA GPU support via `--nv` flag
 - `--exec` mode runs arbitrary commands (e.g., `claude-agent-acp`) with the same isolation as the default mode; uses `apptainer exec` instead of `apptainer run`
+- `--profile NAME` (or `CLAUDE_SANDBOX_PROFILE=NAME`) selects a dedicated persistent home (`~/.claude-sandbox-home-NAME/`), enabling multiple independent Claude Code logins; must precede `--exec`. Leading options are parsed in a loop before dispatching, and remaining args are passed through to Claude Code
+- `--shared-history` bind-mounts a common transcript pool (`~/.claude-sandbox-shared/projects/`) over `/home/sandbox/.claude/projects`, so profiles share resumable conversation history while keeping per-profile credentials/config. Only transcripts are shared; the `.claude.json` input history is not
 
 ## Documentation
 
