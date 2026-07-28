@@ -127,7 +127,7 @@ run_container() {
     fi
     local julia_home; julia_home=$(detect_julia)
     # Only bind Julia install if it's not already under ~/.julia/ (which is already bound)
-    if [ -n "${julia_home}" ] && [[ "${julia_home}" != "${HOME}/.julia"* ]]; then
+    if [ -n "${julia_home}" ] && [[ "${julia_home}" != "${HOME}/.julia/"* ]]; then
         OPTS+=(--bind "${julia_home}:${julia_home}:ro")
     fi
 
@@ -154,7 +154,7 @@ run_container() {
     local container_path="/home/sandbox/.local/bin:/usr/local/bin:/usr/bin:/bin"
     if [ -n "${julia_home}" ]; then
         # Translate juliaup paths (under ~/.julia/) to the container home
-        if [[ "${julia_home}" == "${HOME}/.julia"* ]]; then
+        if [[ "${julia_home}" == "${HOME}/.julia/"* ]]; then
             container_path="/home/sandbox/.julia${julia_home#"${HOME}/.julia"}/bin:${container_path}"
         else
             container_path="${julia_home}/bin:${container_path}"
