@@ -46,6 +46,7 @@ The project consists of three main components:
 **Read-Write Access:**
 - Current working directory
 - `~/.julia/` (Julia packages)
+- `~/R/` (R user library)
 - `~/.claude-sandbox-home/` (persistent sandbox home; `--profile NAME` switches this to `~/.claude-sandbox-home-NAME/` for an isolated login/config/history)
 - `~/.claude-sandbox-shared/projects/` (only with `--shared-history`; bind-mounted over `/home/sandbox/.claude/projects` so profiles pool conversation transcripts while keeping separate credentials/config)
 

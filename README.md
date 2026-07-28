@@ -70,6 +70,7 @@ so it crosses the work/personal boundary by design. The up-arrow input history
 **Read-write access:**
 - Current working directory
 - `~/.julia/` (Julia packages)
+- `~/R/` (R user library)
 - `~/.claude-sandbox-home/` (persistent container home; `~/.claude-sandbox-home-NAME/` with `--profile NAME`)
 
 **Ephemeral copy:**
@@ -90,6 +91,10 @@ Add to your gitignore:
 ```bash
 echo ".venv-sandbox/" >> .gitignore
 ```
+
+### R
+
+R and `r-base-dev` are installed inside the container. User-installed packages in `~/R/` are bind-mounted for persistence across runs.
 
 ### Julia
 

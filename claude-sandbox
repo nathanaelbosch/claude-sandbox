@@ -131,6 +131,9 @@ run_container() {
         OPTS+=(--bind "${julia_home}:${julia_home}:ro")
     fi
 
+    # R user library (for persistent R packages across container runs)
+    [ -d "${HOME}/R" ] && OPTS+=(--bind "${HOME}/R:/home/sandbox/R")
+
     # UV Python installations (for PyCall and other Python-dependent Julia packages)
     [ -d "${HOME}/.local/share/uv/python" ] && OPTS+=(--bind "${HOME}/.local/share/uv/python:${HOME}/.local/share/uv/python:ro")
 
