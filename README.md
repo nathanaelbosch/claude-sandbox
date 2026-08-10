@@ -79,6 +79,7 @@ so it crosses the work/personal boundary by design. The up-arrow input history
 **Read-only access:**
 - Julia binaries (auto-detected from host)
 - `~/.local/share/uv/python/` (for PyCall and Python-dependent Julia packages)
+- `~/.claude/skills/` and `~/.claude/plugins/` (host Claude Code skills and plugins)
 
 **Blocked:**
 - `~/.ssh/`, `~/.aws/`, `~/.config/` (except gh), host environment variables

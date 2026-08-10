@@ -137,6 +137,18 @@ run_container() {
     # UV Python installations (for PyCall and other Python-dependent Julia packages)
     [ -d "${HOME}/.local/share/uv/python" ] && OPTS+=(--bind "${HOME}/.local/share/uv/python:${HOME}/.local/share/uv/python:ro")
 
+    # Host Claude Code skills and plugins (read-only), so sandboxed sessions
+    # get the same skills/plugins as the host without exposing credentials,
+    # history, or projects
+    if [ -d "${HOME}/.claude/skills" ]; then
+        mkdir -p "${SANDBOX_HOME}/.claude/skills"  # ensure bind mount point exists
+        OPTS+=(--bind "${HOME}/.claude/skills:/home/sandbox/.claude/skills:ro")
+    fi
+    if [ -d "${HOME}/.claude/plugins" ]; then
+        mkdir -p "${SANDBOX_HOME}/.claude/plugins"  # ensure bind mount point exists
+        OPTS+=(--bind "${HOME}/.claude/plugins:/home/sandbox/.claude/plugins:ro")
+    fi
+
     # Working directory - added after Julia binds so it takes precedence when inside ~/.julia/
     OPTS+=(--bind "$(pwd):$(pwd)")
 
