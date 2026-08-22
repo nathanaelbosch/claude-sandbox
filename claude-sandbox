@@ -42,6 +42,16 @@ if ! command -v claude-monitor &> /dev/null; then
 fi
 EOF
     fi
+
+    # Copy the transcript scrubber into the sandbox home (fresh each run, so
+    # updates propagate) so hooks and --exec can run it inside the container
+    local script_dir scrub_src
+    script_dir="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+    scrub_src="${script_dir}/transcript-scrub"
+    if [ -f "${scrub_src}" ]; then
+        cp -f "${scrub_src}" "${SANDBOX_HOME}/.local/bin/transcript-scrub"
+        chmod +x "${SANDBOX_HOME}/.local/bin/transcript-scrub"
+    fi
 }
 
 # Build container

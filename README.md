@@ -65,6 +65,56 @@ Note that this lets either profile read conversations created under the other,
 so it crosses the work/personal boundary by design. The up-arrow input history
 (stored in `.claude.json` alongside account state) is *not* shared.
 
+#### Sharing history across *backends* (e.g. Anthropic ↔ compatible APIs)
+
+If one profile uses a different backend (e.g. synthetic.new or another
+Anthropic-compatible API), resuming a transcript written under Anthropic can
+fail with a `400` schema error: the transcript contains blocks the other
+backend's stricter validator rejects — `thinking`/`redacted_thinking` blocks,
+and malformed or orphaned `tool_result` blocks left behind by interrupted
+sessions. Two tools (installed alongside `claude-sandbox`) handle this.
+
+**Recommended: scrub copies, not the originals.** Run the strict profile
+*without* `--shared-history` and bridge conversations with `transcript-clone`
+(host-side). It copies one transcript from the shared pool into the profile's
+own pool and scrubs **only the copy**, so your Anthropic history stays
+bit-for-bit untouched:
+
+```bash
+transcript-clone ~/.claude-sandbox-shared/projects/<project-dir>/<session>.jsonl
+claude-sandbox --profile synthetic --resume <session-id>
+```
+
+Going the other way (synthetic → shared pool) is a plain copy — Anthropic
+accepts everything synthetic-native sessions emit. Existing copies are not
+overwritten unless `--force` is passed, so a conversation that progressed in
+the destination pool can't be clobbered by a re-clone.
+
+**Alternative: scrub in place (convenient, mutates the shared pool).** If you
+do use `--shared-history` across backends and value seamlessness over
+preservation, `transcript-scrub <file>.jsonl` rewrites a transcript in place
+(keeping a one-time `<file>.scrub-backup`; idempotent). To scrub automatically
+on every resume in one profile, add a `SessionStart` hook to that profile's
+settings (e.g. `~/.claude-sandbox-home-synthetic/.claude/settings.json`):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "resume",
+        "hooks": [{ "type": "command", "command": "transcript-scrub --hook" }]
+      }
+    ]
+  }
+}
+```
+
+(transcript-scrub is copied into each sandbox home's `~/.local/bin/`, so the
+hook resolves inside the container.) Caveat: in-place scrubbing strips
+thinking blocks from the shared file for *both* backends — Anthropic resumes
+still work, but old conversations lose their thinking history.
+
 ## How It Works
 
 **Read-write access:**

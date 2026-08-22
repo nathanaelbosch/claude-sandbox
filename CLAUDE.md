@@ -29,17 +29,27 @@ claude-sandbox --profile NAME --shared-history [CLAUDE_ARGS...]
 
 # Installation (run from repo root)
 ./install.sh
+
+# Move a conversation to a stricter backend profile (scrubs only the copy)
+transcript-clone ~/.claude-sandbox-shared/projects/<proj>/<session>.jsonl
+
+# Scrub a transcript in place so a stricter backend can resume it
+transcript-scrub TRANSCRIPT.jsonl     # or: transcript-scrub --hook (SessionStart hook)
 ```
 
 ## Architecture
 
-The project consists of three main components:
+The project consists of four main components:
 
-1. **`claude-sandbox`** (bash script) - Runner that detects Julia, initializes persistent storage at `~/.claude-sandbox-home/`, constructs Apptainer bind mounts, and executes Claude Code inside the container
+1. **`claude-sandbox`** (bash script) - Runner that detects Julia, initializes persistent storage at `~/.claude-sandbox-home/`, constructs Apptainer bind mounts, and executes Claude Code inside the container. Each run also copies `transcript-scrub` into the sandbox home's `~/.local/bin/` so it is available inside the container
 
 2. **`claude-sandbox.def`** (Apptainer definition) - Container recipe based on `node:22-slim` that installs Node.js 22, Python 3.11, uv, gh, git, git-lfs, tmux, gfortran, claude-agent-acp, and Claude Code CLI
 
-3. **`install.sh`** - Creates symlinks in `~/.local/share/claude-sandbox/` and `~/.local/bin/`
+3. **`transcript-scrub`** (Python 3, stdlib only) - Rewrites a Claude Code transcript (JSONL) in place so backends with a stricter message schema than Anthropic's (e.g. synthetic.new) can resume it: strips `thinking`/`redacted_thinking` blocks, drops malformed/orphaned/duplicate `tool_result` blocks, synthesizes results for unanswered `tool_use` calls (appended as a chained user entry when the transcript ends mid-tool-call), and backfills empty message content. Works on folded logical turns (consecutive same-role entries = one turn), separately per sidechain stream. Idempotent; keeps a one-time `<file>.scrub-backup`. `--hook` mode reads hook JSON on stdin and scrubs `transcript_path`, intended for a per-profile `SessionStart` (matcher `resume`) hook
+
+4. **`transcript-clone`** (bash) - Host-side one-way bridge between transcript pools: copies a transcript from the shared pool into a profile's pool and scrubs only the copy (or plain-copies back into the shared pool), leaving the source untouched. Refuses to overwrite an existing destination without `--force`. This is the recommended way to move conversations across backends; the stricter profile should NOT use `--shared-history`
+
+5. **`install.sh`** - Creates symlinks in `~/.local/share/claude-sandbox/` and `~/.local/bin/` (including host-side `transcript-scrub` and `transcript-clone`)
 
 ## Security Model
 
@@ -69,7 +79,7 @@ The project consists of three main components:
 - NVIDIA GPU support via `--nv` flag
 - `--exec` mode runs arbitrary commands (e.g., `claude-agent-acp`) with the same isolation as the default mode; uses `apptainer exec` instead of `apptainer run`
 - `--profile NAME` (or `CLAUDE_SANDBOX_PROFILE=NAME`) selects a dedicated persistent home (`~/.claude-sandbox-home-NAME/`), enabling multiple independent Claude Code logins; must precede `--exec`. Leading options are parsed in a loop before dispatching, and remaining args are passed through to Claude Code
-- `--shared-history` bind-mounts a common transcript pool (`~/.claude-sandbox-shared/projects/`) over `/home/sandbox/.claude/projects`, so profiles share resumable conversation history while keeping per-profile credentials/config. Only transcripts are shared; the `.claude.json` input history is not
+- `--shared-history` bind-mounts a common transcript pool (`~/.claude-sandbox-shared/projects/`) over `/home/sandbox/.claude/projects`, so profiles share resumable conversation history while keeping per-profile credentials/config. Only transcripts are shared; the `.claude.json` input history is not. If profiles use different model backends (e.g. Anthropic vs. a stricter compatible API), cross-resuming Anthropic-written transcripts needs a scrubbed copy — use `transcript-clone` (recommended) or `transcript-scrub` (see README's "Sharing history across backends")
 
 ## Documentation
 

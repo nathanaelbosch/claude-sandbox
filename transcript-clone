@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# Clone a Claude Code conversation transcript from one profile's history pool
+# into another's, scrubbing the copy for cross-backend compatibility when
+# the destination is the stricter backend's profile. The source file is
+# never modified.
+#
+# Typical use (move an Anthropic conversation into the synthetic profile):
+#
+#   transcript-clone ~/.claude-sandbox-shared/projects/<project-dir>/<session>.jsonl
+#
+# then resume it inside the destination profile:
+#
+#   claude-sandbox --profile synthetic
+#   # inside: /resume  (or: claude --resume <session-id>)
+#
+# Direction is inferred from the source path:
+#   ~/.claude-sandbox-shared/projects/...  -> profile pool (copy + scrub)
+#   ~/.claude-sandbox-home-<PROFILE>/.claude/projects/... -> shared pool
+#                                                   (plain copy, no scrub)
+#
+# Options:
+#   --profile NAME   profile to clone into (default: synthetic)
+#   --force          overwrite an existing copy in the destination pool
+#   --dry-run        show what would be done, change nothing
+set -euo pipefail
+
+PROFILE="synthetic"
+FORCE=false
+DRY_RUN=false
+SRC=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --profile) PROFILE="${2:?--profile needs a name}"; shift 2 ;;
+        --profile=*) PROFILE="${1#*=}"; shift ;;
+        --force) FORCE=true; shift ;;
+        --dry-run) DRY_RUN=true; shift ;;
+        --help|-h) sed -n '2,24p' "$0"; exit 0 ;;
+        *) SRC="$1"; shift ;;
+    esac
+done
+
+[ -z "${SRC}" ] && { echo "usage: transcript-clone [--profile NAME] [--force] [--dry-run] TRANSCRIPT.jsonl" >&2; exit 1; }
+[ -f "${SRC}" ] || { echo "transcript-clone: no such file: ${SRC}" >&2; exit 1; }
+[[ "${SRC}" == *.jsonl ]] || { echo "transcript-clone: expected a .jsonl transcript file" >&2; exit 1; }
+
+SHARED_POOL="${HOME}/.claude-sandbox-shared/projects"
+PROFILE_POOL="${HOME}/.claude-sandbox-home-${PROFILE}/.claude/projects"
+
+SCRUB=false
+case "${SRC}" in
+    "${SHARED_POOL}"/*)
+        DEST_ROOT="${PROFILE_POOL}"
+        SCRUB=true
+        ;;
+    "${HOME}/.claude-sandbox-home-"*"/.claude/projects/"*)
+        DEST_ROOT="${SHARED_POOL}"
+        ;;
+    *)
+        cat >&2 <<EOF
+transcript-clone: cannot infer direction from source path:
+  ${SRC}
+expected it under ${SHARED_POOL} (clone into a profile)
+or ${HOME}/.claude-sandbox-home-<NAME>/.claude/projects (clone back to the shared pool)
+EOF
+        exit 1
+        ;;
+esac
+
+PROJECT_DIR="$(basename "$(dirname "${SRC}")")"
+DEST="${DEST_ROOT}/${PROJECT_DIR}/$(basename "${SRC}")"
+SESSION_ID="$(basename "${SRC}" .jsonl)"
+
+if [ -e "${DEST}" ] && [ "${FORCE}" != true ]; then
+    cat >&2 <<EOF
+transcript-clone: ${DEST} already exists.
+The destination conversation may have progressed since an earlier clone;
+overwriting would lose that progress. Re-run with --force to replace it.
+EOF
+    exit 1
+fi
+
+if [ "${DRY_RUN}" = true ]; then
+    echo "would clone: ${SRC}"
+    echo "         to: ${DEST} $(${SCRUB} && echo '(copy would be scrubbed)' || echo '(plain copy)')"
+    exit 0
+fi
+
+mkdir -p "$(dirname "${DEST}")"
+cp "${SRC}" "${DEST}"
+
+if [ "${SCRUB}" = true ]; then
+    SCRUBBER="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)/transcript-scrub"
+    "${SCRUBBER}" "${DEST}"
+fi
+
+if [ "${SCRUB}" = true ]; then
+    RESUME_HINT="claude-sandbox --profile ${PROFILE} --resume ${SESSION_ID}"
+else
+    RESUME_HINT="claude-sandbox --shared-history --resume ${SESSION_ID}"
+fi
+
+cat <<EOF
+Cloned session ${SESSION_ID} into
+  ${DEST}
+Resume it with:
+  ${RESUME_HINT}
+(or start the profile and pick it from /resume)
+EOF

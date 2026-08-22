@@ -1,0 +1,337 @@
+#!/usr/bin/env python3
+"""Scrub a Claude Code transcript for cross-backend resume compatibility.
+
+Claude Code transcripts are plain JSONL. Resuming a conversation replays its
+messages to the configured API, but some backends (e.g. synthetic.new) only
+accept the classic block set {text, image, tool_result} in user messages and
+reject blocks recorded by Anthropic sessions — notably thinking blocks, and
+tool_result blocks left malformed or orphaned by an interrupted session. This
+makes a transcript written under one backend fail to resume under another.
+
+This script scrubs a transcript IN PLACE so that stricter backends accept it:
+
+  1. thinking / redacted_thinking blocks are removed from assistant messages
+  2. tool_result blocks missing tool_use_id or content are dropped
+  3. tool_result blocks with no matching earlier tool_use are dropped
+  4. tool_use blocks left without a result (interrupted turn) get a
+     synthesized placeholder result — anchored in the following user turn,
+     or appended as a new chained user entry when the transcript ends
+     mid-tool-call
+  5. messages left with empty content get placeholder text
+     (content must be non-empty for the request to validate)
+
+Tool-call pairing is computed on folded logical turns: consecutive entries
+of the same role are treated as one message, which is how Claude Code
+replays them.
+
+The original file is kept as <FILE>.scrub-backup (created once, never
+overwritten). Scrubbing is idempotent.
+
+Usage:
+  transcript-scrub [--dry-run] FILE...
+  transcript-scrub --hook          # reads hook JSON on stdin, uses transcript_path
+
+Notes:
+  - Scrubbing mutates the transcript for BOTH backends when used with
+    --shared-history. Thinking blocks are only shown for context; removing
+    them slightly degrades continuity for Anthropic resumes too, but both
+    sides remain resumable.
+  - Assistant/user messages belonging to subagent sidechains are scrubbed as
+    independent tool-call streams.
+"""
+
+import json
+import os
+import shutil
+import sys
+import tempfile
+import uuid
+
+DROP_BLOCK_TYPES = {"thinking", "redacted_thinking"}
+
+# Transcript entries wrap the API message under this key; "msg" is an older alias.
+MESSAGE_KEY = "message"
+
+PLACEHOLDER_TEXT = "[thinking/tool trace removed by transcript-scrub for cross-backend compatibility]"
+MISSING_RESULT_TEXT = "[tool result missing — synthesized by transcript-scrub]"
+
+
+def _get_message(entry):
+    """Return the API message dict wrapped by a transcript entry, or None.
+
+    Current transcripts nest the API message under MESSAGE_KEY; older
+    versions used the "msg" alias or placed role/content at the top
+    level. The returned dict is a live reference — mutations persist
+    in the entry.
+    """
+    for key in (MESSAGE_KEY, "msg"):
+        m = entry.get(key)
+        if isinstance(m, dict) and m.get("role") in ("user", "assistant"):
+            return m
+    if entry.get("role") in ("user", "assistant") and "content" in entry:
+        return entry
+    return None
+
+
+def _content_list(msg):
+    """Return message content as a mutable list, upgrading string/none content."""
+    c = msg.get("content")
+    if isinstance(c, list):
+        return c
+    if isinstance(c, str) and c:
+        msg["content"] = [{"type": "text", "text": c}]
+    else:
+        msg["content"] = []
+    return msg["content"]
+
+
+def scrub_entries(entries, sidechain, stats):
+    """Scrub one conversation stream (main or sidechain) of the transcript.
+
+    `entries` is the FULL parsed transcript (shared across streams so that
+    synthesized entries can be appended at the true end of the file).
+
+    Consecutive entries of the same role form ONE logical turn when the
+    conversation is replayed (Claude Code frequently logs a single turn as
+    several entries: split assistant continuations, tool results delivered in
+    their own user entry, ...). All tool_use/tool_result reconciliation is
+    therefore done on folded turns, not raw entries — otherwise legitimate
+    pairs get mistaken for orphans/interrupts.
+    """
+    # Pass 1: strip thinking blocks from assistant entries.
+    stream = [e for e in entries
+              if isinstance(e, dict) and bool(e.get("isSidechain")) is sidechain]
+    for entry in stream:
+        msg = _get_message(entry)
+        if msg is None:
+            continue
+        if msg["role"] == "assistant" and isinstance(msg.get("content"), list):
+            kept = [b for b in msg["content"]
+                    if not (isinstance(b, dict) and b.get("type") in DROP_BLOCK_TYPES)]
+            stats["thinking_removed"] += len(msg["content"]) - len(kept)
+            if kept != msg["content"]:
+                msg["content"] = kept
+
+    # Pass 2: fold consecutive same-role messages into logical turns.
+    turns = []  # {"role": ..., "msgs": [message dicts, in order]}
+    for entry in stream:
+        msg = _get_message(entry)
+        if msg is None:
+            continue
+        if turns and turns[-1]["role"] == msg["role"]:
+            turns[-1]["msgs"].append(msg)
+        else:
+            turns.append({"role": msg["role"], "msgs": [msg]})
+
+    # Pass 3: reconcile tool_use/tool_result across folded turns.
+    known_use_ids = set()   # every tool_use id seen so far
+    answered_ids = set()    # ids with a (real or synthesized) result
+    prev_uses = []          # tool_use ids of the preceding folded assistant turn
+
+    for turn in turns:
+        if turn["role"] == "assistant":
+            prev_uses = []
+            for msg in turn["msgs"]:
+                if isinstance(msg.get("content"), list):
+                    for b in msg["content"]:
+                        if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id"):
+                            known_use_ids.add(b["id"])
+                            prev_uses.append(b["id"])
+            continue
+
+        # user turn
+        seen_in_turn = set()
+        for msg in turn["msgs"]:
+            if not isinstance(msg.get("content"), list):
+                continue
+            kept = []
+            for b in msg["content"]:
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    tid = b.get("tool_use_id")
+                    if not tid or "content" not in b:
+                        stats["malformed_results_dropped"] += 1
+                        continue
+                    if tid in answered_ids or tid in seen_in_turn:
+                        stats["duplicate_results_dropped"] += 1
+                        continue
+                    if tid not in known_use_ids:
+                        stats["orphaned_results_dropped"] += 1
+                        continue
+                    seen_in_turn.add(tid)
+                kept.append(b)
+            if kept != msg["content"]:
+                msg["content"] = kept
+
+        # Synthesize results for uses the user turn did not answer.
+        anchor = turn["msgs"][-1]
+        for tid in prev_uses:
+            if tid in seen_in_turn:
+                continue
+            _content_list(anchor).append({
+                "type": "tool_result",
+                "tool_use_id": tid,
+                "content": MISSING_RESULT_TEXT,
+                "is_error": True,
+            })
+            stats["results_synthesized"] += 1
+        answered_ids.update(seen_in_turn)
+        answered_ids.update(prev_uses)
+        prev_uses = []
+
+    # Pass 4: conversation ended on unanswered tool calls (interrupted turn).
+    # The results must come AFTER the tool_use, so they cannot be attached to
+    # an earlier user turn; append a synthesized user entry at the end of the
+    # transcript, chained onto the current tip via parentUuid.
+    pending_final = [t for t in prev_uses if t not in answered_ids]
+    if pending_final:
+        tip = None
+        for e in reversed(stream):
+            if isinstance(e, dict) and e.get("uuid"):
+                tip = e
+                break
+        if tip is not None:
+            blocks = [{
+                "type": "tool_result",
+                "tool_use_id": tid,
+                "content": MISSING_RESULT_TEXT,
+                "is_error": True,
+            } for tid in pending_final]
+            entries.append({
+                "type": "user",
+                "parentUuid": tip["uuid"],
+                "isSidechain": sidechain,
+                "userType": tip.get("userType", "external"),
+                "cwd": tip.get("cwd", ""),
+                "sessionId": tip.get("sessionId", tip.get("session_id", "")),
+                "entrypoint": tip.get("entrypoint", "cli"),
+                "version": tip.get("version", ""),
+                "uuid": str(uuid.uuid4()),
+                "timestamp": tip.get("timestamp", ""),
+                MESSAGE_KEY: {"role": "user", "content": blocks},
+            })
+            stats["results_synthesized"] += len(pending_final)
+        else:
+            stats["unresolvable_tool_uses"] += len(pending_final)
+
+    # Pass 5: no message may be left with empty content.
+    for entry in entries:
+        msg = _get_message(entry)
+        if msg is not None and not msg.get("content"):
+            msg["content"] = [{"type": "text", "text": PLACEHOLDER_TEXT}]
+            stats["placeholders_inserted"] += 1
+
+
+def scrub_file(path, dry_run=False, backup=True):
+    """Scrub one transcript file. Returns a stats dict."""
+    with open(path, "r", encoding="utf-8") as f:
+        lines = [l for l in f if l.strip()]
+
+    entries = []
+    for i, line in enumerate(lines, 1):
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError as e:
+            raise ValueError(f"{path}:{i}: invalid JSON ({e})") from e
+
+    stats = {
+        "thinking_removed": 0,
+        "malformed_results_dropped": 0,
+        "orphaned_results_dropped": 0,
+        "duplicate_results_dropped": 0,
+        "results_synthesized": 0,
+        "placeholders_inserted": 0,
+        "unresolvable_tool_uses": 0,
+    }
+
+    # Sidechain (subagent) entries form independent tool-call streams; the
+    # same tool_use id could in principle recur across streams, so scrub each
+    # stream separately.
+    for sidechain in (False, True):
+        scrub_entries(entries, sidechain, stats)
+
+    changed = any(v for k, v in stats.items() if k != "unresolvable_tool_uses")
+
+    if changed and not dry_run:
+        if backup:
+            bak = path + ".scrub-backup"
+            if not os.path.exists(bak):
+                shutil.copy2(path, bak)
+                stats["backup"] = bak
+        out = "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries)
+        # atomic rewrite
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".",
+                                   prefix=".transcript-scrub-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(out)
+            os.replace(tmp, path)
+        except BaseException:
+            os.unlink(tmp)
+            raise
+
+    return stats
+
+
+def _print_report(path, stats):
+    total = sum(v for k, v in stats.items() if isinstance(v, int))
+    if total == 0:
+        print(f"transcript-scrub: {path}: already clean")
+        return
+    print(f"transcript-scrub: {path}: scrubbed")
+    labels = [
+        ("thinking_removed", "thinking blocks removed"),
+        ("malformed_results_dropped", "malformed tool_result blocks dropped"),
+        ("orphaned_results_dropped", "orphaned tool_result blocks dropped"),
+        ("duplicate_results_dropped", "duplicate tool_result blocks dropped"),
+        ("results_synthesized", "placeholder tool_result blocks synthesized"),
+        ("placeholders_inserted", "placeholder texts inserted"),
+        ("unresolvable_tool_uses", "tool_use blocks left unresolvable (no user message to anchor to)"),
+    ]
+    for key, label in labels:
+        if stats.get(key):
+            print(f"  {stats[key]:4d}  {label}")
+    if stats.get("backup"):
+        print(f"  backup: {stats['backup']}")
+
+
+def main(argv):
+    args = argv[1:]
+    dry_run = "--dry-run" in args
+    hook_mode = "--hook" in args
+    files = [a for a in args if not a.startswith("--")]
+
+    if hook_mode:
+        try:
+            payload = json.load(sys.stdin)
+        except json.JSONDecodeError:
+            return 0  # don't block the hook on unexpected input
+        path = payload.get("transcript_path")
+        if path and os.path.isfile(path):
+            try:
+                stats = scrub_file(path)
+                if any(v for k, v in stats.items() if isinstance(v, int)):
+                    print(f"transcript-scrub: scrubbed {path}: {stats}",
+                          file=sys.stderr)
+            except (ValueError, OSError) as e:
+                print(f"transcript-scrub: {e}", file=sys.stderr)
+        return 0  # never fail the session
+
+    if not files:
+        print(__doc__.strip().splitlines()[0], file=sys.stderr)
+        print("usage: transcript-scrub [--dry-run] FILE... | transcript-scrub --hook",
+              file=sys.stderr)
+        return 1
+
+    rc = 0
+    for path in files:
+        try:
+            stats = scrub_file(path, dry_run=dry_run)
+            _print_report(path, stats)
+        except (ValueError, OSError) as e:
+            print(f"transcript-scrub: {e}", file=sys.stderr)
+            rc = 1
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
