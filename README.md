@@ -1,8 +1,10 @@
-# claude-sandbox
+# agent-sandbox
 
-Run [Claude Code](https://claude.ai/code) in an isolated [Apptainer](https://apptainer.org) container.
+Run AI coding agents in an isolated [Apptainer](https://apptainer.org) container.
 
-Blocks access to SSH keys, AWS credentials, and most of your home directory while allowing Claude to work normally in your current project.
+Blocks access to SSH keys, AWS credentials, and most of your home directory while allowing the agent to work normally in your current project. One shared container, multiple agents.
+
+Supported agents: **Claude Code**, **Pi**, **Codex**, **Gemini CLI**, **Aider**
 
 ## Install
 
@@ -11,67 +13,75 @@ Requires [Apptainer](https://apptainer.org/docs/admin/main/installation.html).
 ```bash
 git clone git@github.com:nathanaelbosch/claude-sandbox.git
 cd claude-sandbox && ./install.sh
-claude-sandbox --build
+agent-sandbox --build
 ```
 
 ## Usage
 
 ```bash
-claude-sandbox                        # Run Claude Code in sandbox
-claude-sandbox --build                # Rebuild container
-claude-sandbox --exec CMD [ARGS...]   # Run arbitrary command inside the sandbox
-claude-sandbox --profile NAME ...     # Use a separate login/config (e.g. work vs personal)
-claude-sandbox --shared-history ...   # Pool conversation transcripts across profiles
+agent-sandbox claude                    # Run Claude Code
+agent-sandbox pi                       # Run Pi
+agent-sandbox claude --profile work    # Use a separate login/config
+agent-sandbox claude --exec CMD [ARGS...]  # Run arbitrary command in the sandbox
+agent-sandbox --build                  # Rebuild container (shared by all agents)
+```
+
+The agent CLI is installed automatically on first run into the persistent home directory.
+
+### Running commands inside the sandbox
+
+Use `--exec` to run arbitrary commands inside the container with the same isolation:
+
+```bash
+agent-sandbox claude --exec claude-agent-acp   # ACP bridge for Emacs agent-shell
+agent-sandbox pi --exec npm install -g pi-synthetic  # Install a Pi plugin
 ```
 
 ### Profiles (multiple logins)
 
-By default the sandbox stores its login and config in `~/.claude-sandbox-home/`.
-Pass `--profile NAME` to use a dedicated home at `~/.claude-sandbox-home-NAME/`
-instead, giving that profile a completely independent Claude Code login, config,
-and history. Log in once per profile and switch freely without re-authenticating:
+Pass `--profile NAME` to use a dedicated home directory, giving that profile a completely independent login, config, and history:
 
 ```bash
-claude-sandbox --profile work       # first run: log in with the work subscription
-claude-sandbox --profile personal   # first run: log in with the personal subscription
-claude-sandbox --profile work       # thereafter: reuses the work login, no re-login
+agent-sandbox claude --profile work       # first run: log in with work subscription
+agent-sandbox claude --profile personal   # first run: log in with personal subscription
+agent-sandbox claude --profile work       # thereafter: reuses work login
 ```
 
-The profile can also be set via the `CLAUDE_SANDBOX_PROFILE` environment variable,
-which makes per-profile shell aliases easy:
+Each profile is stored at `~/.agent-sandbox/homes/<agent>-<profile>/`.
+
+#### Sharing history across profiles (Claude only)
+
+Add `--shared-history` to pool conversation transcripts across profiles:
 
 ```bash
-alias claude-work='CLAUDE_SANDBOX_PROFILE=work claude-sandbox'
-alias claude-personal='CLAUDE_SANDBOX_PROFILE=personal claude-sandbox'
+agent-sandbox claude --profile work --shared-history
+agent-sandbox claude --profile personal --shared-history
 ```
 
-`--profile` works with `--exec` too, but must come before it (everything after
-`--exec` is treated as the command to run).
-
-#### Sharing history across profiles
-
-Profiles are isolated by default, including conversation history. Add
-`--shared-history` to pool the **conversation transcripts** (the resumable
-sessions, stored in `.claude/projects/`) in a common directory
-(`~/.claude-sandbox-shared/projects/`) that all profiles bind-mount:
-
-```bash
-claude-sandbox --profile work --shared-history       # work login, shared transcripts
-claude-sandbox --profile personal --shared-history   # personal login, same transcripts
-```
-
-Logins, config, and settings stay per-profile — only the transcripts are shared.
-Note that this lets either profile read conversations created under the other,
-so it crosses the work/personal boundary by design. The up-arrow input history
-(stored in `.claude.json` alongside account state) is *not* shared.
+Logins, config, and settings stay per-profile — only transcripts are shared.
 
 ## How It Works
+
+All agents share a single container image with common tooling (Node.js, Python, uv, git, gh, etc.). The agent-specific CLI is installed at first run into the persistent home.
+
+### Directory layout
+
+```
+~/.agent-sandbox/
+├── agent-sandbox.sif        # container image (shared by all agents)
+└── homes/
+    ├── claude/              # default Claude home
+    ├── claude-work/         # Claude --profile work
+    └── pi/                  # default Pi home
+```
+
+### Security model
 
 **Read-write access:**
 - Current working directory
 - `~/.julia/` (Julia packages)
 - `~/R/` (R user library)
-- `~/.claude-sandbox-home/` (persistent container home; `~/.claude-sandbox-home-NAME/` with `--profile NAME`)
+- Agent persistent home (`~/.agent-sandbox/homes/<agent>/`)
 
 **Ephemeral copy:**
 - `~/.config/gh/` → `/tmp/.config/gh` (GitHub CLI credentials, copied fresh each run)
@@ -79,44 +89,49 @@ so it crosses the work/personal boundary by design. The up-arrow input history
 **Read-only access:**
 - Julia binaries (auto-detected from host)
 - `~/.local/share/uv/python/` (for PyCall and Python-dependent Julia packages)
-- `~/.claude/skills/` and `~/.claude/plugins/` (host Claude Code skills and plugins)
+- `~/.claude/skills/` and `~/.claude/plugins/` (Claude only — host skills and plugins)
 
 **Blocked:**
 - `~/.ssh/`, `~/.aws/`, `~/.config/` (except gh), host environment variables
 
 ### Python
 
-Python 3.11 and [uv](https://docs.astral.sh/uv/) are installed inside the container. To avoid conflicts with host virtual environments, the container uses `.venv-sandbox/` instead of `.venv/`.
+Python 3.11 and [uv](https://docs.astral.sh/uv/) are installed inside the container. To avoid conflicts with host virtual environments, the container uses `.venv-sandbox/` instead of `.venv/`:
 
-Add to your gitignore:
 ```bash
 echo ".venv-sandbox/" >> .gitignore
 ```
 
-### R
-
-R and `r-base-dev` are installed inside the container. User-installed packages in `~/R/` are bind-mounted for persistence across runs.
-
 ### Julia
 
-Julia binaries are detected from your host system and bind-mounted read-only. The `~/.julia/` directory is mounted read-write for package management.
-
-To support precompilation caches that contain hardcoded paths (e.g., in `deps.jl` files), `~/.julia/` is also exposed read-write at its original host path.
+Julia binaries are detected from your host system and bind-mounted read-only. `~/.julia/` is mounted read-write for package management and also exposed at its original host path to support hardcoded paths in precompilation caches.
 
 ### agent-shell (Emacs ACP)
 
-The container includes [`claude-agent-acp`](https://github.com/zed-industries/claude-agent-acp), an ACP bridge for use with [agent-shell](https://github.com/xenodium/agent-shell) in Emacs. Use `--exec` to run it inside the sandbox:
+The container includes [`claude-agent-acp`](https://github.com/zed-industries/claude-agent-acp) for use with [agent-shell](https://github.com/xenodium/agent-shell) in Emacs:
 
 ```bash
-claude-sandbox --exec claude-agent-acp
+agent-sandbox claude --exec claude-agent-acp
 ```
 
 In your Emacs config:
 ```elisp
-(setq agent-shell-container-command-runner '("claude-sandbox" "--exec"))
+(setq agent-shell-container-command-runner '("agent-sandbox" "claude" "--exec"))
 ```
 
-All sandboxing constraints apply equally to `--exec` mode — the same bind mounts, env vars, and isolation flags are used.
+### Adding a new agent
+
+Add 4 lines to the `resolve_agent` case statement in `agent-sandbox`:
+
+```bash
+    name)   AGENT_INSTALL='<install command>'
+            AGENT_BIN='$HOME/.local/bin/<binary>'
+            AGENT_CONFIG_DIR=".<config-dir>" ;;
+```
+
+### Migrating from claude-sandbox
+
+If upgrading from the old `claude-sandbox` layout, the script will warn about legacy directories and print the exact commands to migrate them. The `claude-sandbox` command still works as a backwards-compatible alias for `agent-sandbox claude`.
 
 ## Disclaimer
 

@@ -4,28 +4,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Claude Code Apptainer Sandbox - a containerized environment that runs Claude Code in an isolated Apptainer container with strict security boundaries. It provides sandboxed execution while selectively allowing access to specific resources (working directory, GitHub credentials, Julia installations).
+Agent Sandbox - a containerized environment that runs AI coding agents (Claude Code, Pi, Codex, Gemini CLI, Aider) in an isolated Apptainer container with strict security boundaries. All agents share a single container image with common tooling; the agent-specific CLI is installed at first run into a persistent home directory.
 
 ## Build and Run Commands
 
 ```bash
-# Build the container (first run or to rebuild)
-claude-sandbox --build
+# Build the shared container (first run or to rebuild)
+agent-sandbox --build
 
-# Run Claude Code in sandbox
-claude-sandbox
+# Run an agent in sandbox
+agent-sandbox claude
+agent-sandbox pi
 
-# Pass arguments to Claude Code
-claude-sandbox [CLAUDE_ARGS...]
+# Pass arguments to the agent
+agent-sandbox claude [AGENT_ARGS...]
 
-# Run arbitrary command inside the sandbox (e.g., claude-agent-acp for Emacs ACP)
-claude-sandbox --exec CMD [ARGS...]
+# Run arbitrary command inside the sandbox
+agent-sandbox claude --exec CMD [ARGS...]
 
-# Use a separate persistent home for an independent login/config (e.g. work vs personal)
-claude-sandbox --profile NAME [CLAUDE_ARGS...]
+# Use a separate persistent home for an independent login/config
+agent-sandbox claude --profile NAME [AGENT_ARGS...]
 
-# Pool conversation transcripts across profiles (keeps logins/config separate)
-claude-sandbox --profile NAME --shared-history [CLAUDE_ARGS...]
+# Pool conversation transcripts across profiles (Claude only)
+agent-sandbox claude --profile NAME --shared-history [AGENT_ARGS...]
 
 # Installation (run from repo root)
 ./install.sh
@@ -35,11 +36,25 @@ claude-sandbox --profile NAME --shared-history [CLAUDE_ARGS...]
 
 The project consists of three main components:
 
-1. **`claude-sandbox`** (bash script) - Runner that detects Julia, initializes persistent storage at `~/.claude-sandbox-home/`, constructs Apptainer bind mounts, and executes Claude Code inside the container
+1. **`agent-sandbox`** (bash script) - Runner that detects the agent from the first argument, resolves agent config (install command, binary path, config directory), detects Julia, initializes persistent storage, constructs Apptainer bind mounts, and executes the agent inside the container
 
-2. **`claude-sandbox.def`** (Apptainer definition) - Container recipe based on `node:22-slim` that installs Node.js 22, Python 3.11, uv, gh, git, git-lfs, tmux, gfortran, claude-agent-acp, and Claude Code CLI
+2. **`agent-sandbox.def`** (Apptainer definition) - Container recipe based on `node:22-slim` that installs Node.js 22, Python 3.11, uv, gh, git, git-lfs, tmux, gfortran, and claude-agent-acp. The runscript uses `AGENT_INSTALL` and `AGENT_BIN` env vars passed by the runner to install and launch the selected agent
 
-3. **`install.sh`** - Creates symlinks in `~/.local/share/claude-sandbox/` and `~/.local/bin/`
+3. **`install.sh`** - Creates symlinks in `~/.local/bin/` (`agent-sandbox` and `claude-sandbox` for backwards compat)
+
+## Directory Layout
+
+```
+~/.agent-sandbox/
+├── agent-sandbox.sif        # container image (shared by all agents)
+├── homes/
+│   ├── claude/              # default Claude home
+│   ├── claude-work/         # Claude --profile work
+│   └── pi/                  # default Pi home
+└── shared/
+    └── claude/
+        └── projects/        # shared transcript pool
+```
 
 ## Security Model
 
@@ -47,8 +62,8 @@ The project consists of three main components:
 - Current working directory
 - `~/.julia/` (Julia packages)
 - `~/R/` (R user library)
-- `~/.claude-sandbox-home/` (persistent sandbox home; `--profile NAME` switches this to `~/.claude-sandbox-home-NAME/` for an isolated login/config/history)
-- `~/.claude-sandbox-shared/projects/` (only with `--shared-history`; bind-mounted over `/home/sandbox/.claude/projects` so profiles pool conversation transcripts while keeping separate credentials/config)
+- Agent persistent home (`~/.agent-sandbox/homes/<agent>/`; `--profile NAME` uses `~/.agent-sandbox/homes/<agent>-NAME/`)
+- `~/.agent-sandbox/shared/<agent>/projects/` (only with `--shared-history`)
 
 **Ephemeral Copy (fresh each run):**
 - `~/.config/gh/` → copied to `/tmp/.config/gh` so gh can perform config migrations
@@ -56,20 +71,30 @@ The project consists of three main components:
 **Read-Only Access:**
 - Julia binaries (auto-detected from host)
 - `~/.local/share/uv/python/` (for PyCall and Python-dependent Julia packages)
-- `~/.claude/skills/` and `~/.claude/plugins/` (host Claude Code skills/plugins, so sandboxed sessions see the same skills without exposing credentials/history/projects)
+- `~/.claude/skills/` and `~/.claude/plugins/` (Claude only — host skills/plugins)
 
 **Blocked:** SSH keys, AWS credentials, home directory, host environment variables
 
-**Instance Isolation:** Each container instance gets its own temp directory (`/tmp/claude-sandbox-$UID/instance.XXXXXX`), ensuring multiple users and multiple instances don't interfere with each other. Temp directories are cleaned up on exit.
+**Instance Isolation:** Each container instance gets its own temp directory (`/tmp/agent-sandbox-$UID/instance.XXXXXX`), ensuring multiple users and multiple instances don't interfere. Temp directories are cleaned up on exit.
 
 ## Container Environment
 
 - Uses `.venv-sandbox/` for Python venvs (via `UV_PROJECT_ENVIRONMENT`) to avoid conflicts with host `.venv/`
 - Git author/email passed from host via environment variables
 - NVIDIA GPU support via `--nv` flag
-- `--exec` mode runs arbitrary commands (e.g., `claude-agent-acp`) with the same isolation as the default mode; uses `apptainer exec` instead of `apptainer run`
-- `--profile NAME` (or `CLAUDE_SANDBOX_PROFILE=NAME`) selects a dedicated persistent home (`~/.claude-sandbox-home-NAME/`), enabling multiple independent Claude Code logins; must precede `--exec`. Leading options are parsed in a loop before dispatching, and remaining args are passed through to Claude Code
-- `--shared-history` bind-mounts a common transcript pool (`~/.claude-sandbox-shared/projects/`) over `/home/sandbox/.claude/projects`, so profiles share resumable conversation history while keeping per-profile credentials/config. Only transcripts are shared; the `.claude.json` input history is not
+- `--exec` mode runs arbitrary commands with the same isolation; uses `apptainer exec` instead of `apptainer run`
+- `--profile NAME` selects a dedicated persistent home, enabling multiple independent logins per agent
+- `--shared-history` (Claude only) bind-mounts a common transcript pool so profiles share resumable conversation history while keeping per-profile credentials/config
+
+## Adding a New Agent
+
+Add 4 lines to the `resolve_agent` case statement in `agent-sandbox`:
+
+```bash
+    name)   AGENT_INSTALL='<install command>'
+            AGENT_BIN='$HOME/.local/bin/<binary>'
+            AGENT_CONFIG_DIR=".<config-dir>" ;;
+```
 
 ## Documentation
 

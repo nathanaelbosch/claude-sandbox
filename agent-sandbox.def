@@ -3,7 +3,7 @@ From: node:22-slim
 
 %labels
     Author nrbosch
-    Description Claude Code Sandbox
+    Description Agent Sandbox
 
 %post
     export DEBIAN_FRONTEND=noninteractive
@@ -48,9 +48,10 @@ From: node:22-slim
     export UV_PROJECT_ENVIRONMENT=.venv-sandbox
 
 %runscript
-    # Install Claude Code on first run (enables auto-updates)
-    if [ ! -x "$HOME/.local/bin/claude" ]; then
-        echo "Installing Claude Code..."
-        curl -fsSL https://claude.ai/install.sh | bash -s latest
+    # Install agent on first run (AGENT_INSTALL and AGENT_BIN set by runner)
+    RESOLVED_BIN=$(eval echo "${AGENT_BIN}")
+    if [ ! -x "${RESOLVED_BIN}" ]; then
+        echo "Installing ${AGENT_NAME}..."
+        eval "${AGENT_INSTALL}"
     fi
-    exec "$HOME/.local/bin/claude" "$@"
+    exec "${RESOLVED_BIN}" "$@"

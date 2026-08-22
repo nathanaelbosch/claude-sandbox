@@ -1,15 +1,80 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SANDBOX_DIR="${HOME}/.local/share/claude-sandbox"
-SANDBOX_HOME="${HOME}/.claude-sandbox-home"
-SANDBOX_SIF="${SANDBOX_DIR}/claude-sandbox.sif"
+SUPPORTED_AGENTS="claude, pi, codex, gemini, aider"
+
+usage() {
+    echo "Usage: agent-sandbox <agent> [--profile NAME] [--shared-history] [AGENT_ARGS...]"
+    echo "       agent-sandbox <agent> --exec CMD [ARGS...]"
+    echo "       agent-sandbox --build"
+    echo ""
+    echo "Agents: ${SUPPORTED_AGENTS}"
+}
+
+# Resolve agent config from name
+resolve_agent() {
+    case "$1" in
+        claude) AGENT_INSTALL='curl -fsSL https://claude.ai/install.sh | bash -s latest'
+                AGENT_BIN='$HOME/.local/bin/claude'
+                AGENT_CONFIG_DIR=".claude" ;;
+        pi)     AGENT_INSTALL='curl -fsSL https://pi.dev/install.sh | sh'
+                AGENT_BIN='$HOME/.local/bin/pi'
+                AGENT_CONFIG_DIR=".pi/agent" ;;
+        codex)  AGENT_INSTALL='npm install -g @openai/codex'
+                AGENT_BIN='$HOME/.local/bin/codex'
+                AGENT_CONFIG_DIR=".codex" ;;
+        gemini) AGENT_INSTALL='npm install -g @google/gemini-cli'
+                AGENT_BIN='$HOME/.local/bin/gemini'
+                AGENT_CONFIG_DIR=".gemini" ;;
+        aider)  AGENT_INSTALL='uv tool install aider-chat'
+                AGENT_BIN='$HOME/.local/bin/aider'
+                AGENT_CONFIG_DIR=".aider" ;;
+        *)      echo "Unknown agent: $1" >&2
+                echo "Supported: ${SUPPORTED_AGENTS}" >&2
+                exit 1 ;;
+    esac
+}
+
+SANDBOX_BASE="${HOME}/.agent-sandbox"
+SANDBOX_SIF="${SANDBOX_BASE}/agent-sandbox.sif"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+
+# Build container
+build_container() {
+    echo "Building agent sandbox container..."
+    mkdir -p "${SANDBOX_BASE}"
+
+    if ! apptainer build --fix-perms "${SANDBOX_SIF}" "${SCRIPT_DIR}/agent-sandbox.def" 2>/dev/null; then
+        echo "Trying with --fakeroot..."
+        apptainer build --fakeroot "${SANDBOX_SIF}" "${SCRIPT_DIR}/agent-sandbox.def"
+    fi
+    echo "Container built: ${SANDBOX_SIF}"
+}
+
+# Handle --build and --help first (they don't need an agent name)
+case "${1:-}" in
+    --build) build_container; exit 0 ;;
+    --help|-h) usage; exit 0 ;;
+esac
+
+# Backwards compat: "claude-sandbox" invocation implies agent=claude
+SCRIPT_NAME=$(basename "$0")
+if [ "${SCRIPT_NAME}" = "claude-sandbox" ]; then
+    AGENT="claude"
+else
+    AGENT="${1:-}"
+    [ -z "${AGENT}" ] && { usage; exit 0; }
+    shift
+fi
+resolve_agent "${AGENT}"
+
+SANDBOX_HOME="${SANDBOX_BASE}/homes/${AGENT}"
 
 # Transcript pool shared across profiles when --shared-history is set
-SANDBOX_SHARED_PROJECTS="${HOME}/.claude-sandbox-shared/projects"
+SANDBOX_SHARED_PROJECTS="${SANDBOX_BASE}/shared/${AGENT}/projects"
 
 # Per-user tmp base directory (avoid conflicts with other users)
-SANDBOX_TMP_BASE="/tmp/claude-sandbox-${UID}"
+SANDBOX_TMP_BASE="/tmp/agent-sandbox-${UID}"
 
 # Instance-specific tmp directory (set in run_container)
 SANDBOX_TMP=""
@@ -26,35 +91,29 @@ trap cleanup EXIT
 
 # Initialize persistent home directory
 init_sandbox_home() {
-    mkdir -p "${SANDBOX_HOME}"/{.local/bin,.local/share/uv,.config,.claude}
+    mkdir -p "${SANDBOX_HOME}"/{.local/bin,.local/share/uv,.config}
+    mkdir -p "${SANDBOX_HOME}/${AGENT_CONFIG_DIR}"
 
     if [ ! -f "${SANDBOX_HOME}/.bashrc" ]; then
-        cat > "${SANDBOX_HOME}/.bashrc" << 'EOF'
+        cat > "${SANDBOX_HOME}/.bashrc" << 'BASHRC'
 export PATH="$HOME/.local/bin:$PATH"
 export UV_TOOL_DIR="$HOME/.local/share/uv/tools"
 export UV_TOOL_BIN_DIR="$HOME/.local/bin"
 export UV_PROJECT_ENVIRONMENT=.venv-sandbox
+BASHRC
+    fi
+
+    # Claude-specific: install claude-monitor on first run
+    if [ "${AGENT}" = claude ] && ! grep -q claude-monitor "${SANDBOX_HOME}/.bashrc"; then
+        cat >> "${SANDBOX_HOME}/.bashrc" << 'BASHRC'
 
 # Install claude-monitor on first run
 if ! command -v claude-monitor &> /dev/null; then
     echo "Installing claude-monitor..."
     uv tool install claude-monitor 2>/dev/null || true
 fi
-EOF
+BASHRC
     fi
-}
-
-# Build container
-build_container() {
-    echo "Building Claude sandbox container..."
-    mkdir -p "${SANDBOX_DIR}"
-
-    # Try unprivileged build first, fall back to fakeroot
-    if ! apptainer build --fix-perms "${SANDBOX_SIF}" "${SANDBOX_DIR}/claude-sandbox.def" 2>/dev/null; then
-        echo "Trying with --fakeroot..."
-        apptainer build --fakeroot "${SANDBOX_SIF}" "${SANDBOX_DIR}/claude-sandbox.def"
-    fi
-    echo "Container built: ${SANDBOX_SIF}"
 }
 
 # Detect Julia installation path
@@ -81,7 +140,7 @@ detect_julia() {
 
 # Run container
 run_container() {
-    [ ! -f "${SANDBOX_SIF}" ] && { echo "Run 'claude-sandbox --build' first"; exit 1; }
+    [ ! -f "${SANDBOX_SIF}" ] && { echo "Run 'agent-sandbox --build' first"; exit 1; }
     init_sandbox_home
 
     # Create per-instance temp directory (cleaned up on exit via trap)
@@ -103,9 +162,9 @@ run_container() {
     # home so each profile keeps its own credentials/config but pools sessions.
     # Session history is keyed by the working directory path, which is identical
     # across profiles, so the same project resolves to the same transcripts.
-    if [ "${SHARED_HISTORY:-}" = true ]; then
+    if [ "${SHARED_HISTORY:-}" = true ] && [ "${AGENT}" = claude ]; then
         mkdir -p "${SANDBOX_SHARED_PROJECTS}"
-        mkdir -p "${SANDBOX_HOME}/.claude/projects"  # ensure bind mount point exists
+        mkdir -p "${SANDBOX_HOME}/.claude/projects"
         OPTS+=(--bind "${SANDBOX_SHARED_PROJECTS}:/home/sandbox/.claude/projects")
     fi
 
@@ -137,16 +196,16 @@ run_container() {
     # UV Python installations (for PyCall and other Python-dependent Julia packages)
     [ -d "${HOME}/.local/share/uv/python" ] && OPTS+=(--bind "${HOME}/.local/share/uv/python:${HOME}/.local/share/uv/python:ro")
 
-    # Host Claude Code skills and plugins (read-only), so sandboxed sessions
-    # get the same skills/plugins as the host without exposing credentials,
-    # history, or projects
-    if [ -d "${HOME}/.claude/skills" ]; then
-        mkdir -p "${SANDBOX_HOME}/.claude/skills"  # ensure bind mount point exists
-        OPTS+=(--bind "${HOME}/.claude/skills:/home/sandbox/.claude/skills:ro")
-    fi
-    if [ -d "${HOME}/.claude/plugins" ]; then
-        mkdir -p "${SANDBOX_HOME}/.claude/plugins"  # ensure bind mount point exists
-        OPTS+=(--bind "${HOME}/.claude/plugins:/home/sandbox/.claude/plugins:ro")
+    # Claude-specific: host skills and plugins (read-only)
+    if [ "${AGENT}" = claude ]; then
+        if [ -d "${HOME}/.claude/skills" ]; then
+            mkdir -p "${SANDBOX_HOME}/.claude/skills"
+            OPTS+=(--bind "${HOME}/.claude/skills:/home/sandbox/.claude/skills:ro")
+        fi
+        if [ -d "${HOME}/.claude/plugins" ]; then
+            mkdir -p "${SANDBOX_HOME}/.claude/plugins"
+            OPTS+=(--bind "${HOME}/.claude/plugins:/home/sandbox/.claude/plugins:ro")
+        fi
     fi
 
     # Working directory - added after Julia binds so it takes precedence when inside ~/.julia/
@@ -174,15 +233,21 @@ run_container() {
     fi
     OPTS+=(--env "PATH=${container_path}")
 
+    # Pass agent config to container
+    OPTS+=(--env "AGENT_NAME=${AGENT}")
+    OPTS+=(--env "AGENT_INSTALL=${AGENT_INSTALL}")
+    OPTS+=(--env "AGENT_BIN=${AGENT_BIN}")
+
     if [ "${EXEC_MODE:-}" = true ]; then
         # Exec mode: run arbitrary command inside the container.
-        # Ensure claude CLI is installed first (normally done by runscript).
+        # Ensure agent CLI is installed first (normally done by runscript).
         # Installation output goes to stderr to keep stdin/stdout clean for
         # protocols like ACP that communicate over stdio.
         exec apptainer exec "${OPTS[@]}" "${SANDBOX_SIF}" bash -c '
-            if [ ! -x "$HOME/.local/bin/claude" ]; then
-                echo "Installing Claude Code..." >&2
-                curl -fsSL https://claude.ai/install.sh | bash -s latest >&2
+            RESOLVED_BIN=$(eval echo "${AGENT_BIN}")
+            if [ ! -x "${RESOLVED_BIN}" ]; then
+                echo "Installing ${AGENT_NAME}..." >&2
+                eval "${AGENT_INSTALL}" >&2
             fi
             exec "$@"
         ' _ "$@"
@@ -191,21 +256,18 @@ run_container() {
     fi
 }
 
-# Parse leading sandbox options, then hand the rest to Claude Code / --exec.
-# --profile must come before --exec (everything after --exec is the command).
-PROFILE="${CLAUDE_SANDBOX_PROFILE:-}"
+# Parse remaining options (agent name already consumed)
+PROFILE=""
 SHARED_HISTORY=false
 EXEC_MODE=false
-ACTION="run"
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --build) ACTION="build"; shift ;;
         --exec) EXEC_MODE=true; shift; break ;;
         --profile) PROFILE="${2:-}"; shift 2 ;;
         --profile=*) PROFILE="${1#*=}"; shift ;;
         --shared-history) SHARED_HISTORY=true; shift ;;
-        --help|-h) ACTION="help"; shift; break ;;
+        --help|-h) usage; exit 0 ;;
         *) break ;;
     esac
 done
@@ -216,11 +278,29 @@ if [ -n "${PROFILE}" ]; then
         echo "Invalid profile name: '${PROFILE}' (use letters, digits, '-' or '_')" >&2
         exit 1
     fi
-    SANDBOX_HOME="${HOME}/.claude-sandbox-home-${PROFILE}"
+    SANDBOX_HOME="${SANDBOX_BASE}/homes/${AGENT}-${PROFILE}"
 fi
 
-case "${ACTION}" in
-    build) build_container ;;
-    help) echo "Usage: claude-sandbox [--profile NAME] [--shared-history] [--build|--exec CMD [ARGS...]|--help] [CLAUDE_ARGS...]" ;;
-    run) run_container "$@" ;;
-esac
+# Backwards compat: detect legacy directories
+if [ "${AGENT}" = claude ]; then
+    if [ -n "${PROFILE}" ]; then
+        LEGACY_HOME="${HOME}/.claude-sandbox-home-${PROFILE}"
+    else
+        LEGACY_HOME="${HOME}/.claude-sandbox-home"
+    fi
+    if [ -d "${LEGACY_HOME}" ]; then
+        echo "WARNING: Legacy home directory detected. Please migrate:" >&2
+        [ ! -d "$(dirname "${SANDBOX_HOME}")" ] && echo "  mkdir -p $(dirname "${SANDBOX_HOME}")" >&2
+        echo "  mv ${LEGACY_HOME} ${SANDBOX_HOME}" >&2
+        SANDBOX_HOME="${LEGACY_HOME}"
+    fi
+    LEGACY_SHARED="${HOME}/.claude-sandbox-shared/projects"
+    if [ -d "${LEGACY_SHARED}" ]; then
+        echo "WARNING: Legacy shared history detected. Please migrate:" >&2
+        [ ! -d "$(dirname "${SANDBOX_SHARED_PROJECTS}")" ] && echo "  mkdir -p $(dirname "${SANDBOX_SHARED_PROJECTS}")" >&2
+        echo "  mv ${LEGACY_SHARED} ${SANDBOX_SHARED_PROJECTS}" >&2
+        SANDBOX_SHARED_PROJECTS="${LEGACY_SHARED}"
+    fi
+fi
+
+run_container "$@"
