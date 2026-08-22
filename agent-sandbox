@@ -94,6 +94,14 @@ init_sandbox_home() {
     mkdir -p "${SANDBOX_HOME}"/{.local/bin,.local/share/uv,.config}
     mkdir -p "${SANDBOX_HOME}/${AGENT_CONFIG_DIR}"
 
+    if [ ! -f "${SANDBOX_HOME}/.bash_profile" ]; then
+        echo '[ -f ~/.bashrc ] && . ~/.bashrc' > "${SANDBOX_HOME}/.bash_profile"
+    fi
+
+    if [ ! -f "${SANDBOX_HOME}/.tmux.conf" ]; then
+        echo 'set -g extended-keys on' > "${SANDBOX_HOME}/.tmux.conf"
+    fi
+
     if [ ! -f "${SANDBOX_HOME}/.bashrc" ]; then
         cat > "${SANDBOX_HOME}/.bashrc" << 'BASHRC'
 export PATH="$HOME/.local/bin:$PATH"
@@ -214,6 +222,7 @@ run_container() {
     # Environment variables
     OPTS+=(--env "TERM=${TERM:-xterm-256color}")
     OPTS+=(--env "UV_PROJECT_ENVIRONMENT=.venv-sandbox")
+    OPTS+=(--env 'PS1=\[\e[1;32m\]\u\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]\$ ')
 
     local git_name git_email
     git_name=$(git config --global user.name 2>/dev/null) || true
