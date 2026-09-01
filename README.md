@@ -119,15 +119,22 @@ In your Emacs config:
 (setq agent-shell-container-command-runner '("agent-sandbox" "claude" "--exec"))
 ```
 
+### Agent awareness
+
+On every run, the runner writes a short "you are inside agent-sandbox" section into the agent's global context file (e.g. `~/.claude/CLAUDE.md`, `~/.pi/agent/AGENTS.md`) so the agent knows the sandbox boundaries no matter which directory you open it in. The section is delimited by `<!-- agent-sandbox:begin -->` / `<!-- agent-sandbox:end -->` markers and is regenerated on each launch — edits inside the markers are overwritten, your own notes outside them are preserved.
+
 ### Adding a new agent
 
-Add 4 lines to the `resolve_agent` case statement in `agent-sandbox`:
+Add 5 lines to the `resolve_agent` case statement in `agent-sandbox`:
 
 ```bash
     name)   AGENT_INSTALL='<install command>'
             AGENT_BIN='$HOME/.local/bin/<binary>'
-            AGENT_CONFIG_DIR=".<config-dir>" ;;
+            AGENT_CONFIG_DIR=".<config-dir>"
+            AGENT_CONTEXT_FILE="<path/to/global/context-file>" ;;  # relative to sandbox home
 ```
+
+Set `AGENT_CONTEXT_FILE=""` if the agent has no global context file.
 
 ### Migrating from claude-sandbox
 

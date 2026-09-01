@@ -36,7 +36,7 @@ agent-sandbox claude --profile NAME --shared-history [AGENT_ARGS...]
 
 The project consists of three main components:
 
-1. **`agent-sandbox`** (bash script) - Runner that detects the agent from the first argument, resolves agent config (install command, binary path, config directory), detects Julia, initializes persistent storage, constructs Apptainer bind mounts, and executes the agent inside the container
+1. **`agent-sandbox`** (bash script) - Runner that detects the agent from the first argument, resolves agent config (install command, binary path, config directory, global context file), detects Julia, initializes persistent storage, syncs a marker-delimited "you are in agent-sandbox" section into the agent's global context file (so agents know the sandbox boundaries from any cwd), constructs Apptainer bind mounts, and executes the agent inside the container
 
 2. **`agent-sandbox.def`** (Apptainer definition) - Container recipe based on `node:22-slim` that installs Node.js 22, Python 3.11, uv, gh, git, git-lfs, tmux, gfortran, and claude-agent-acp. The runscript uses `AGENT_INSTALL` and `AGENT_BIN` env vars passed by the runner to install and launch the selected agent
 
@@ -88,13 +88,16 @@ The project consists of three main components:
 
 ## Adding a New Agent
 
-Add 4 lines to the `resolve_agent` case statement in `agent-sandbox`:
+Add 5 lines to the `resolve_agent` case statement in `agent-sandbox`:
 
 ```bash
     name)   AGENT_INSTALL='<install command>'
             AGENT_BIN='$HOME/.local/bin/<binary>'
-            AGENT_CONFIG_DIR=".<config-dir>" ;;
+            AGENT_CONFIG_DIR=".<config-dir>"
+            AGENT_CONTEXT_FILE="<path/to/global/context-file>" ;;  # relative to sandbox home
 ```
+
+Set `AGENT_CONTEXT_FILE=""` if the agent has no global context file. The sandbox-awareness section is managed by `sandbox_context_note`/`sync_context_file` between `<!-- agent-sandbox:begin -->` / `<!-- agent-sandbox:end -->` markers; keep its text in sync when changing the security model.
 
 ## Documentation
 
