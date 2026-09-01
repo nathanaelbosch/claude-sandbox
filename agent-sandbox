@@ -46,7 +46,10 @@ build_container() {
 
     if ! apptainer build --fix-perms "${SANDBOX_SIF}" "${SCRIPT_DIR}/agent-sandbox.def" 2>/dev/null; then
         echo "Trying with --fakeroot..."
-        apptainer build --fakeroot "${SANDBOX_SIF}" "${SCRIPT_DIR}/agent-sandbox.def"
+        if ! apptainer build --fakeroot "${SANDBOX_SIF}" "${SCRIPT_DIR}/agent-sandbox.def" 2>/dev/null; then
+            echo "Trying with --fakeroot --ignore-fakeroot-command..."
+            apptainer build --fakeroot --ignore-fakeroot-command "${SANDBOX_SIF}" "${SCRIPT_DIR}/agent-sandbox.def"
+        fi
     fi
     echo "Container built: ${SANDBOX_SIF}"
 }
