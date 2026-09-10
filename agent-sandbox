@@ -22,11 +22,11 @@ resolve_agent() {
                 AGENT_BIN='$HOME/.local/bin/pi'
                 AGENT_CONFIG_DIR=".pi/agent"
                 AGENT_CONTEXT_FILE=".pi/agent/AGENTS.md" ;;
-        codex)  AGENT_INSTALL='npm install -g @openai/codex'
+        codex)  AGENT_INSTALL='npm install -g --prefix "$HOME/.local" @openai/codex'
                 AGENT_BIN='$HOME/.local/bin/codex'
                 AGENT_CONFIG_DIR=".codex"
                 AGENT_CONTEXT_FILE=".codex/AGENTS.md" ;;
-        gemini) AGENT_INSTALL='npm install -g @google/gemini-cli'
+        gemini) AGENT_INSTALL='npm install -g --prefix "$HOME/.local" @google/gemini-cli'
                 AGENT_BIN='$HOME/.local/bin/gemini'
                 AGENT_CONFIG_DIR=".gemini"
                 AGENT_CONTEXT_FILE=".gemini/GEMINI.md" ;;
